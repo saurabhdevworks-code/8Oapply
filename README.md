@@ -1,4 +1,4 @@
-# 🤖 JobBot v2.0 — Auto Apply Bot for Indian Job Portals
+# 🤖 8Oapply — Autonomous Job Application Platform
 
 > Apply to hundreds of jobs automatically across 9 platforms — LinkedIn, Naukri, Indeed, Glassdoor, Internshala, Shine, Foundit, TimesJobs, and Wellfound.
 
@@ -240,5 +240,6 @@ PRs welcome! If a platform's selectors break (websites update their HTML), feel 
 ---
 
 *Built with ❤️ for the Indian job market — happy job hunting! 🚀*
-#   8 O a p p l y  
+#   8 O a p p l y 
+ 
  
