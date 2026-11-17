@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Frontend
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+
+# Runtime files
+cookies/
+jobbot.log
+*.log
+applied_jobs.csv
+job_responses.json
+collected_jobs.json
+scheduler_history.json
+inbox_seen_ids.json
+users.db
+data/
+resume.pdf
