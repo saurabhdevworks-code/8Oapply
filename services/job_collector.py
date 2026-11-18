@@ -326,7 +326,7 @@ def run_job_collector(config: Dict[str, Any]) -> Dict[str, Any]:
             existing_ids.add(job["id"])
 
     # 3. Sort by user's platform priority order + fit score
-    priority_order = [p.lower() for p in config.get("platform_priority_order", ["linkedin", "naukri", "indeed", "greenhouse", "lever", "internshala", "others"])]
+    priority_order = [p.lower() for p in (config.get("platform_priority_order") or config.get("platform_priority") or ["linkedin", "indeed", "naukri", "glassdoor", "internshala", "shine", "foundit", "timesjobs", "wellfound", "others"])]
 
     def get_sort_weight(job: Dict[str, Any]) -> int:
         src = (job.get("source") or "others").lower()

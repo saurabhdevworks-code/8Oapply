@@ -53,6 +53,11 @@ import {
   Globe,
   Radio,
   Calendar,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpToLine,
+  GripVertical,
+  ListOrdered,
 } from 'lucide-react';
 
 const AI_PROVIDERS = [
@@ -99,6 +104,19 @@ const SUPPORTED_PLATFORMS = [
   { id: 'others', name: 'Direct ATS / Others', flag: 'use_others', emailKey: 'others_email', passKey: 'others_password' },
 ];
 
+const DEFAULT_PLATFORM_PRIORITY = [
+  'linkedin',
+  'indeed',
+  'naukri',
+  'glassdoor',
+  'internshala',
+  'shine',
+  'foundit',
+  'timesjobs',
+  'wellfound',
+  'others',
+];
+
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { config, updateConfigValue, handleSaveConfig, showToast, theme, applyTheme } = useBot();
@@ -141,6 +159,57 @@ export default function SettingsPage() {
   // Job targets state
   const [newRole, setNewRole] = useState('');
   const [newLocation, setNewLocation] = useState('');
+
+  // Platform Execution Priority Order helpers
+  const currentPriorityOrder = React.useMemo(() => {
+    const saved = config?.platform_priority_order || config?.platform_priority;
+    if (Array.isArray(saved) && saved.length > 0) {
+      const lowerSaved = saved.map((p) => (typeof p === 'string' ? p.toLowerCase() : ''));
+      const combined = [...lowerSaved.filter(Boolean)];
+      DEFAULT_PLATFORM_PRIORITY.forEach((p) => {
+        if (!combined.includes(p)) combined.push(p);
+      });
+      return combined;
+    }
+    return DEFAULT_PLATFORM_PRIORITY;
+  }, [config?.platform_priority_order, config?.platform_priority]);
+
+  const handleMovePriority = (index, direction) => {
+    const newOrder = [...currentPriorityOrder];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
+    const temp = newOrder[index];
+    newOrder[index] = newOrder[targetIndex];
+    newOrder[targetIndex] = temp;
+    updateConfigValue('platform_priority_order', newOrder);
+  };
+
+  const handleMoveToTop = (index) => {
+    if (index === 0) return;
+    const newOrder = [...currentPriorityOrder];
+    const [item] = newOrder.splice(index, 1);
+    newOrder.unshift(item);
+    updateConfigValue('platform_priority_order', newOrder);
+  };
+
+  const handleSetPriorityRank = (fromIndex, toRank) => {
+    const toIndex = Math.max(0, Math.min(currentPriorityOrder.length - 1, toRank - 1));
+    if (fromIndex === toIndex) return;
+    const newOrder = [...currentPriorityOrder];
+    const [item] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, item);
+    updateConfigValue('platform_priority_order', newOrder);
+  };
+
+  const handleResetPriorityOrder = () => {
+    updateConfigValue('platform_priority_order', DEFAULT_PLATFORM_PRIORITY);
+  };
+
+  const handleEnableAllPlatforms = () => {
+    SUPPORTED_PLATFORMS.forEach((p) => {
+      updateConfigValue(p.flag, true);
+    });
+  };
 
   // Email test state
   const [sendingTestEmail, setSendingTestEmail] = useState(false);
@@ -807,16 +876,146 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Filtering Parameters */}
+          {/* Job Post Age & Collection Volume Quota Card */}
           <div className="bg-white dark:bg-slate-900 rounded-[10px] border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <Sliders className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Job Discovery Filters & Compensation Expectations
-              </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-500" />
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Job Post Age & Collection Limits
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Set how many days old posts to collect, and specify maximum collection volume per platform.
+                  </p>
+                </div>
+              </div>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+                Freshness: Last {config.job_post_age_days ?? 7} Days
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Feature 1: How many days old posts/jobs to collect */}
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <span>How Many Days Old Posts/Jobs to Collect</span>
+                  </label>
+                  <span className="text-xs font-bold text-blue-600 dark:text-blue-400 font-mono">
+                    {config.job_post_age_days ?? 7} Days Max
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={config.job_post_age_days ?? 7}
+                    onChange={(e) => {
+                      const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                      updateConfigValue('job_post_age_days', val);
+                    }}
+                    className="w-24 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none font-mono"
+                    placeholder="7"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Days Old</span>
+                </div>
+
+                {/* Quick Presets for Post Age */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    { label: '24 Hours (1 Day)', value: 1 },
+                    { label: '3 Days', value: 3 },
+                    { label: '7 Days (1 Wk)', value: 7 },
+                    { label: '14 Days (2 Wks)', value: 14 },
+                    { label: '30 Days (1 Mo)', value: 30 },
+                  ].map((preset) => {
+                    const isSelected = (config.job_post_age_days ?? 7) === preset.value;
+                    return (
+                      <button
+                        key={preset.value}
+                        type="button"
+                        onClick={() => updateConfigValue('job_post_age_days', preset.value)}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition cursor-pointer border ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Scrapers on Indeed, LinkedIn, Naukri, and Glassdoor will collect only jobs published within this window and automatically ignore older postings.
+                </p>
+              </div>
+
+              {/* Feature 2: How many jobs to collect per platform */}
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Max Jobs to Collect (Per Platform)
+                  </label>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                    {config.max_per_platform ?? 50} Listings
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="5"
+                    max="500"
+                    step="5"
+                    value={config.max_per_platform ?? 50}
+                    onChange={(e) => {
+                      const val = Math.max(5, parseInt(e.target.value, 10) || 25);
+                      updateConfigValue('max_per_platform', val);
+                      updateConfigValue('max_jobs_to_collect', val);
+                    }}
+                    className="w-24 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:border-blue-500 focus:outline-none font-mono"
+                    placeholder="50"
+                  />
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Jobs / Platform</span>
+                </div>
+
+                {/* Quick Presets for Collection Volume */}
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[25, 50, 100, 200].map((qty) => {
+                    const isSelected = (config.max_per_platform ?? 50) === qty;
+                    return (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => {
+                          updateConfigValue('max_per_platform', qty);
+                          updateConfigValue('max_jobs_to_collect', qty);
+                        }}
+                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-md transition cursor-pointer border ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                        }`}
+                      >
+                        {qty} Jobs
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Limits the maximum number of new unapplied listings collected per platform in each automated or scheduled discovery run.
+                </p>
+              </div>
+            </div>
+
+            {/* Experience & Expected CTC secondary row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800/80">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Target Work Experience (Years)
@@ -826,7 +1025,7 @@ export default function SettingsPage() {
                   value={config.experience || ''}
                   onChange={(e) => updateConfigValue('experience', e.target.value)}
                   placeholder="Leave blank if fresher, or e.g. 1.5"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-[4px] border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:border-blue-500 focus:outline-none font-mono"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:border-blue-500 focus:outline-none font-mono"
                 />
               </div>
 
@@ -839,26 +1038,170 @@ export default function SettingsPage() {
                   value={config.expected_ctc || config.salary || ''}
                   onChange={(e) => updateConfigValue('expected_ctc', e.target.value)}
                   placeholder="e.g. 800000"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-[4px] border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:border-blue-500 focus:outline-none font-mono"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:border-blue-500 focus:outline-none font-mono"
                 />
               </div>
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Job Post Age Filter
-                </label>
-                <select
-                  value={config.job_post_age_days ?? 14}
-                  onChange={(e) => updateConfigValue('job_post_age_days', parseInt(e.target.value, 10))}
-                  className="w-full px-2.5 py-1.5 text-xs rounded-[4px] border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:border-blue-500 focus:outline-none"
-                >
-                  <option value={1}>Last 24 Hours Only</option>
-                  <option value={3}>Last 3 Days</option>
-                  <option value={7}>Last 7 Days (Past Week)</option>
-                  <option value={14}>Last 14 Days</option>
-                  <option value={30}>Last 30 Days (Past Month)</option>
-                </select>
+          {/* Feature: Priority Order of Platforms */}
+          <div className="bg-white dark:bg-slate-900 rounded-[10px] border border-slate-200/90 dark:border-slate-800 p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <ListOrdered className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Platform Execution Priority Order
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Rank platforms in the exact sequence you want 8Oapply to collect and apply to jobs. Use Move Up/Down buttons or the rank selector.
+                  </p>
+                </div>
               </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetPriorityOrder}
+                  className="px-2.5 py-1 text-[11px] font-bold rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Reset to Default
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEnableAllPlatforms}
+                  className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 hover:bg-purple-100 transition cursor-pointer"
+                >
+                  Enable All
+                </button>
+              </div>
+            </div>
+
+            {/* Interactive Priority List */}
+            <div className="space-y-2">
+              {currentPriorityOrder.map((platId, idx) => {
+                const platObj = SUPPORTED_PLATFORMS.find((p) => p.id === platId) || {
+                  id: platId,
+                  name: platId.charAt(0).toUpperCase() + platId.slice(1),
+                  flag: `use_${platId}`,
+                };
+                const isEnabled = config[platObj.flag] !== false;
+                const isTop = idx === 0;
+                const isSecond = idx === 1;
+
+                return (
+                  <div
+                    key={platId}
+                    className={`p-3 rounded-xl border transition flex items-center justify-between gap-3 select-none ${
+                      isTop
+                        ? 'border-purple-300 dark:border-purple-500/40 bg-purple-50/40 dark:bg-purple-950/20 shadow-2xs'
+                        : isSecond
+                        ? 'border-blue-200 dark:border-blue-500/30 bg-blue-50/20 dark:bg-blue-950/15'
+                        : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Left: Drag grip indicator + Rank + Logo + Name */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <GripVertical className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0" />
+
+                      {/* Rank Badge */}
+                      <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-md font-mono shrink-0 ${
+                          isTop
+                            ? 'bg-purple-600 text-white shadow-2xs'
+                            : isSecond
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        #{idx + 1}
+                      </span>
+
+                      <PlatformLogo id={platObj.id} className="w-6 h-6 rounded-md shrink-0" />
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                            {platObj.name}
+                          </span>
+                          {isTop && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700">
+                              Top Priority
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-slate-400 truncate block">
+                          {isEnabled ? 'Active in execution queue' : 'Disabled in platform settings'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Right: Quick Rank Jump + Move Up / Down Buttons + Enable Switch */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Priority Rank Selector */}
+                      <select
+                        value={idx + 1}
+                        onChange={(e) => handleSetPriorityRank(idx, parseInt(e.target.value, 10))}
+                        className="text-xs font-bold px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
+                        title="Jump to priority rank"
+                      >
+                        {currentPriorityOrder.map((_, rIdx) => (
+                          <option key={rIdx + 1} value={rIdx + 1}>
+                            Rank #{rIdx + 1}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Move to Top */}
+                      {!isTop && (
+                        <button
+                          type="button"
+                          onClick={() => handleMoveToTop(idx)}
+                          className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-purple-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                          title="Move to top priority (#1)"
+                        >
+                          <ArrowUpToLine className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* Move Up */}
+                      <button
+                        type="button"
+                        onClick={() => handleMovePriority(idx, -1)}
+                        disabled={idx === 0}
+                        className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move Up in Priority"
+                      >
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Move Down */}
+                      <button
+                        type="button"
+                        onClick={() => handleMovePriority(idx, 1)}
+                        disabled={idx === currentPriorityOrder.length - 1}
+                        className="p-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move Down in Priority"
+                      >
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Toggle Enable/Disable Platform */}
+                      <button
+                        type="button"
+                        onClick={() => updateConfigValue(platObj.flag, !isEnabled)}
+                        className={`text-xs font-bold px-2.5 py-1 rounded-md transition cursor-pointer border ${
+                          isEnabled
+                            ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {isEnabled ? 'Enabled' : 'Disabled'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

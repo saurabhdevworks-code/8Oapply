@@ -1889,7 +1889,10 @@ def fetch_indeed_jobs_stealth(job_title: str, location: str, max_jobs: int = 35)
             )
             q_enc = urllib.parse.quote_plus(clean_q)
             l_enc = urllib.parse.quote_plus(clean_l)
+            post_age_days = int(CONFIG.get("job_post_age_days") or 7)
             url = f"https://in.indeed.com/jobs?q={q_enc}&l={l_enc}"
+            if post_age_days:
+                url += f"&fromage={post_age_days}"
             page.goto(url, timeout=25000)
             page.wait_for_timeout(2000)
 
@@ -2944,6 +2947,14 @@ def main():
             log.info(f"{'═'*60}")
 
             active_platforms = [(name, fn) for name, (fn, flag) in PLATFORM_MAP.items() if CONFIG.get(flag)]
+
+            # Respect user's customized platform execution priority order
+            user_order = [str(p).strip().lower() for p in (CONFIG.get("platform_priority_order") or CONFIG.get("platform_priority") or [])]
+            if user_order:
+                def get_plat_rank(item):
+                    name = item[0].lower()
+                    return user_order.index(name) if name in user_order else 999
+                active_platforms.sort(key=get_plat_rank)
 
             for i, (platform_name, bot_fn) in enumerate(active_platforms):
                 log.info(f"\n▶  Starting {platform_name}...")
