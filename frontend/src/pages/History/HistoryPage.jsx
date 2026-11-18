@@ -682,7 +682,7 @@ export default function HistoryPage() {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-neutral-950 border-b border-neutral-800 text-neutral-400 font-medium select-none">
-                <th className="py-2 px-1.5 w-6 text-center select-none">
+                <th className="py-2 pl-4 sm:pl-5 pr-2 w-12 text-center select-none">
                   <button
                     type="button"
                     onClick={handleToggleSelectAll}
@@ -703,7 +703,7 @@ export default function HistoryPage() {
                     setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
                     setPage(1);
                   }}
-                  className="py-2 px-2 whitespace-nowrap cursor-pointer select-none hover:text-neutral-200 transition group"
+                  className="py-2 px-2.5 whitespace-nowrap cursor-pointer select-none hover:text-neutral-200 transition group"
                   title={
                     sortOrder === 'desc'
                       ? 'Currently sorted by Recent first. Click to sort by Older first.'
@@ -719,13 +719,13 @@ export default function HistoryPage() {
                     )}
                   </div>
                 </th>
-                <th className="py-2 px-2 whitespace-nowrap">Platform</th>
-                <th className="py-2 px-2">Job Title</th>
-                <th className="py-2 px-2">Company</th>
-                <th className="py-2 px-2 whitespace-nowrap">Status</th>
-                <th className="py-2 px-2.5 whitespace-nowrap">Job Description</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Listing</th>
-                <th className="py-2 px-2 text-center whitespace-nowrap">Action</th>
+                <th className="py-2 px-2.5 whitespace-nowrap">Platform</th>
+                <th className="py-2 px-2.5">Job Title</th>
+                <th className="py-2 px-2.5">Company</th>
+                <th className="py-2 px-2.5 whitespace-nowrap">Status</th>
+                <th className="py-2 px-2.5 whitespace-nowrap w-[210px] max-w-[210px]">Job Description</th>
+                <th className="py-2 px-2 text-center whitespace-nowrap w-[70px]">Listing</th>
+                <th className="py-2 pr-4 pl-2 text-center whitespace-nowrap w-[75px]">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800/60">
@@ -744,7 +744,7 @@ export default function HistoryPage() {
               ) : (
                 paginatedJobs.map((job, idx) => (
                   <tr key={idx} className="hover:bg-neutral-800/40 transition">
-                    <td className="py-1.5 px-1.5 w-6 text-center select-none">
+                    <td className="py-1.5 pl-4 sm:pl-5 pr-2 w-12 text-center select-none">
                       <button
                         type="button"
                         onClick={() => handleToggleSelect(job.job_id)}
@@ -760,10 +760,10 @@ export default function HistoryPage() {
                         )}
                       </button>
                     </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap text-neutral-400 font-mono text-[11px]">
+                    <td className="py-1.5 px-2.5 whitespace-nowrap text-neutral-400 font-mono text-[11px]">
                       {job.date || '—'}
                     </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap">
+                    <td className="py-1.5 px-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <PlatformLogo
                           id={(job.platform || 'indeed').toLowerCase()}
@@ -775,34 +775,35 @@ export default function HistoryPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-1.5 px-2 font-medium text-neutral-200 max-w-[180px] truncate" title={job.job_title}>
+                    <td className="py-1.5 px-2.5 font-medium text-neutral-200 max-w-[190px] truncate" title={job.job_title}>
                       {job.job_title || '—'}
                     </td>
-                    <td className="py-1.5 px-2 text-neutral-300 font-medium max-w-[140px] truncate" title={job.company}>
+                    <td className="py-1.5 px-2.5 text-neutral-300 font-medium max-w-[140px] truncate" title={job.company}>
                       {job.company || '—'}
                     </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap">
-                      <span className={`text-xs ${getStatusTextColor(job.status || 'Not Applied')}`}>
+                    <td className="py-1.5 px-2.5 whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${getStatusTextColor(job.status || 'Not Applied')}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0 opacity-80" />
                         {job.status || 'Not Applied'}
                       </span>
                     </td>
-                    <td className="py-2 px-2.5 text-neutral-300 text-xs max-w-[280px] xl:max-w-[320px]">
+                    <td className="py-2 px-2.5 text-neutral-300 text-xs w-[210px] max-w-[210px]">
                       {(() => {
                         const rawDesc = (job.description || '').trim();
                         const descText = rawDesc || `Engineering position for ${job.job_title} at ${job.company} building scalable backend architecture, RESTful APIs, and cloud services.`;
                         const isExpanded = expandedDescIds.has(job.job_id);
-                        const isLong = descText.length > 95;
+                        const isLong = descText.length > 55;
 
-                        // Clean word-boundary truncation for inline preview
+                        // Concise word-boundary truncation for inline preview
                         let previewText = descText;
                         if (!isExpanded && isLong) {
-                          const cut = descText.slice(0, 95);
+                          const cut = descText.slice(0, 52);
                           const lastSpace = cut.lastIndexOf(' ');
-                          previewText = (lastSpace > 45 ? cut.slice(0, lastSpace) : cut) + '...';
+                          previewText = (lastSpace > 25 ? cut.slice(0, lastSpace) : cut) + '...';
                         }
 
                         return (
-                          <div className="text-[11.5px] leading-relaxed text-neutral-300 font-sans">
+                          <div className="w-[210px] max-w-[210px] text-[11.5px] leading-relaxed text-neutral-300 font-sans">
                             {isExpanded ? (
                               <div className="space-y-1">
                                 <p className="whitespace-pre-line">{descText}</p>
@@ -840,7 +841,7 @@ export default function HistoryPage() {
                         );
                       })()}
                     </td>
-                    <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                    <td className="py-1.5 px-2 text-center whitespace-nowrap w-[70px]">
                       {job.url ? (
                         <a
                           href={job.url}
@@ -854,7 +855,7 @@ export default function HistoryPage() {
                         <span className="text-neutral-600">—</span>
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-center whitespace-nowrap">
+                    <td className="py-1.5 pr-4 pl-2 text-center whitespace-nowrap w-[75px]">
                       <div className="inline-flex items-center gap-2.5 justify-center">
                         {/* Apply icon without bg */}
                         <button
