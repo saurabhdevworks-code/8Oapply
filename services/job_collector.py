@@ -68,7 +68,7 @@ def append_to_applied_csv(new_jobs: List[Dict[str, Any]]) -> int:
     if not new_jobs:
         return 0
 
-    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
     added = 0
 
     with FileLock(str(CSV_LOCK_FILE), timeout=10):
@@ -106,7 +106,8 @@ def append_to_applied_csv(new_jobs: List[Dict[str, Any]]) -> int:
                     company,
                     jid,
                     j.get("url", ""),
-                    "Not Applied"
+                    "Not Applied",
+                    (j.get("description") or j.get("snippet") or "").strip()
                 ])
                 existing_ids.add(jid)
                 added += 1

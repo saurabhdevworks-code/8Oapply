@@ -402,6 +402,11 @@ export default function ScheduledJobSelectModal({
                           </span>
                         )}
                       </div>
+                      {job.description && (
+                        <p className="text-[11.5px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                          {job.description}
+                        </p>
+                      )}
                     </div>
                   </div>
 

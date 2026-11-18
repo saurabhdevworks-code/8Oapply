@@ -583,6 +583,7 @@ def get_applied_jobs(request: Request):
                 "job_id": (row.get("job_id") or "").strip(),
                 "url": (row.get("url") or "").strip(),
                 "status": (row.get("status") or "").strip() or "Not Applied",
+                "description": (row.get("description") or "").strip(),
             })
         jobs.reverse()
         return jobs
@@ -630,7 +631,7 @@ def update_job_status(payload: JobStatusUpdate, request: Request):
         raise HTTPException(status_code=404, detail="applied_jobs.csv not found")
     try:
         rows = []
-        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
         import io
         with open(target_csv, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read().replace("\x00", "")
@@ -1201,7 +1202,7 @@ def remove_jobs_from_all_stores(target_ids: set, target_csv: Path) -> int:
     if not clean_targets:
         return 0
 
-    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
 
     def _purge_csv(csv_path: Path) -> int:
         if not csv_path.exists():
@@ -1299,7 +1300,7 @@ def bulk_delete_jobs(payload: BulkJobActionPayload, request: Request):
 def clear_all_jobs(request: Request):
     paths = resolve_paths(request)
     target_csv = paths["csv_file"]
-    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
     try:
         for csv_path in [target_csv, CSV_FILE]:
             if csv_path.exists():
@@ -1324,7 +1325,7 @@ def bulk_update_job_status(payload: BulkJobActionPayload, request: Request):
     try:
         clean_targets = {str(t).strip() for t in payload.job_ids if str(t).strip()}
         new_status = payload.status or "Applied"
-        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
 
         def _bulk_status(csv_p: Path) -> int:
             if not csv_p.exists():

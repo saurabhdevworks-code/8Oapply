@@ -253,7 +253,7 @@ def is_job_already_applied(job_id="", url="", title="", company="") -> bool:
     return False
 
 
-def save_applied(platform, job_title, company, job_id, url="", status="Not Applied"):
+def save_applied(platform, job_title, company, job_id, url="", status="Not Applied", description=""):
     global TOTAL_COLLECTED, TOTAL_APPLIED
 
     # Clean job title and company strictly to avoid noisy breadcrumbs or scraper tags
@@ -297,7 +297,7 @@ def save_applied(platform, job_title, company, job_id, url="", status="Not Appli
         except Exception:
             pass
 
-    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
     rows = []
     found = False
 
@@ -328,6 +328,8 @@ def save_applied(platform, job_title, company, job_id, url="", status="Not Appli
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 for r in rows:
+                    if r.get("job_id") == job_id and description:
+                        r["description"] = description
                     writer.writerow({k: r.get(k, "") for k in fieldnames})
         else:
             file_exists = os.path.exists(APPLIED_FILE) and os.stat(APPLIED_FILE).st_size > 0
@@ -337,7 +339,7 @@ def save_applied(platform, job_title, company, job_id, url="", status="Not Appli
                     writer.writerow(fieldnames)
                 writer.writerow([
                     datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    platform, job_title, company, job_id, url, status
+                    platform, job_title, company, job_id, url, status, description
                 ])
     log.info(f"💾 Saved: {platform} | {job_title} @ {company} [{status}]")
 
@@ -1109,7 +1111,7 @@ def linkedin_posts_collector(driver, title, loc):
                 pass
 
             if job_id not in applied_jobs:
-                save_applied("LinkedIn", f"{title} (Post by {author})", company, job_id, post_url, status="Not Applied")
+                save_applied("LinkedIn", f"{title} (Post by {author})", company, job_id, post_url, status="Not Applied", description=p_text)
                 collected_posts += 1
 
         log.info(f"LinkedIn: Collected {collected_posts} direct recruiter post opportunities")
@@ -1295,8 +1297,16 @@ def linkedin_bot():
                     if not job_id:
                         job_id = f"li_{job_title}_{company}".replace(" ", "_")
 
+                    # Extract real job description
+                    li_desc = ""
+                    try:
+                        desc_el = driver.find_elements(By.CSS_SELECTOR, ".jobs-description__content, .jobs-box__html-content, .show-more-less-html__markup, .jobs-description-content, .jobs-description")
+                        if desc_el:
+                            li_desc = desc_el[0].text.strip()
+                    except Exception:
+                        pass
                     # Log job as Collected with status 'Not Applied'
-                    save_applied("LinkedIn", job_title, company, job_id, driver.current_url, status="Not Applied")
+                    save_applied("LinkedIn", job_title, company, job_id, driver.current_url, status="Not Applied", description=li_desc)
 
                     if job_id in applied_jobs:
                         log.info(f"LinkedIn: SKIP (already applied) — {job_title} @ {company}")
@@ -1707,8 +1717,16 @@ def naukri_bot():
                 except Exception:
                     pass
 
+                # Extract real job description
+                nk_desc = ""
+                try:
+                    desc_el = driver.find_elements(By.CSS_SELECTOR, ".job-desc, .styles_job-desc-container__txpYf, .dang-inner-html, .job-desc-container, .jobDesc, [class*='job-desc']")
+                    if desc_el:
+                        nk_desc = desc_el[0].text.strip()
+                except Exception:
+                    pass
                 # 1. Log job as Collected with status 'Not Applied'
-                save_applied("Naukri", title, company, job_id, href, status="Not Applied")
+                save_applied("Naukri", title, company, job_id, href, status="Not Applied", description=nk_desc)
 
                 apply_btn = None
                 # 1. Try finding apply button by ID or universal XPath
@@ -1889,6 +1907,8 @@ def fetch_indeed_jobs_stealth(job_title: str, location: str, max_jobs: int = 35)
                     title = title_el.inner_text().strip() if title_el else ""
                     company = company_el.inner_text().strip() if company_el else "Unknown"
                     location_text = loc_el.inner_text().strip() if loc_el else clean_l
+                    snippet_el = c.query_selector(".job-snippet, [data-testid='job-snippet'], .underShelfFooter, td.resultContent ul")
+                    desc_text = snippet_el.inner_text().strip().replace("\n", " ") if snippet_el else ""
 
                     jk = ""
                     if link_el:
@@ -1915,7 +1935,8 @@ def fetch_indeed_jobs_stealth(job_title: str, location: str, max_jobs: int = 35)
                             "company": company,
                             "location": location_text,
                             "job_id": jk,
-                            "url": job_url
+                            "url": job_url,
+                            "description": desc_text
                         })
                 except Exception:
                     pass
@@ -1960,7 +1981,7 @@ def indeed_bot():
                 pass
 
             job_id = sj.get("job_id") or f"indeed_{sj['title']}_{sj['company']}".replace(" ", "_")
-            save_applied("Indeed", sj["title"], sj["company"], job_id, sj["url"], status="Not Applied")
+            save_applied("Indeed", sj["title"], sj["company"], job_id, sj["url"], status="Not Applied", description=sj.get("description", ""))
             log.info(f"✨ Indeed: Collected {sj['title']} @ {sj['company']} [{sj.get('location', target_loc)}]")
             collected_valid.append(sj)
             applied += 1
@@ -2077,7 +2098,14 @@ def glassdoor_bot():
                     pass
 
                 job_id = driver.current_url.split("?")[0].rstrip("/").split("/")[-1]
-                save_applied("Glassdoor", title, company, job_id, driver.current_url, status="Not Applied")
+                gd_desc = ""
+                try:
+                    desc_el = driver.find_elements(By.CSS_SELECTOR, ".JobDetails_jobDescription__uW_fK, .desc, [data-test='jobDescriptionText']")
+                    if desc_el:
+                        gd_desc = desc_el[0].text.strip()
+                except Exception:
+                    pass
+                save_applied("Glassdoor", title, company, job_id, driver.current_url, status="Not Applied", description=gd_desc)
                 if job_id in applied_jobs:
                     human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
                     continue
@@ -2317,10 +2345,18 @@ def shine_bot():
                 driver.get(href)
                 human_delay(CONFIG.get("page_load_wait", 8), CONFIG.get("page_load_wait", 8) + 4)
                 company = "Unknown"
+                shine_desc = ""
                 try:
                     company = driver.find_element(By.CSS_SELECTOR, ".company-name, h2.company a").text.strip()
                 except Exception:
                     pass
+                try:
+                    desc_el = driver.find_elements(By.CSS_SELECTOR, ".jobDesc, .job_desc, .jobDetail_content, .job-details")
+                    if desc_el:
+                        shine_desc = desc_el[0].text.strip()
+                except Exception:
+                    pass
+                save_applied("Shine", title, company, job_id, href, status="Not Applied", description=shine_desc)
 
                 for sel in [".apply-btn", "a.apply", "button.apply-btn", "#applyBtn"]:
                     try:
