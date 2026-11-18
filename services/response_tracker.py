@@ -207,7 +207,7 @@ def sync_applied_jobs_with_inbox_and_lifecycle() -> Dict[str, Any]:
     rows = []
     changes = []
     now = datetime.now()
-    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status", "description"]
 
     with open(APPLIED_FILE, "r", encoding="utf-8", errors="ignore") as f:
         reader = csv.DictReader(f)

@@ -786,42 +786,47 @@ export default function HistoryPage() {
                         {job.status || 'Not Applied'}
                       </span>
                     </td>
-                    <td className="py-2 px-2.5 text-neutral-300 text-xs min-w-[240px] max-w-[360px]">
+                    <td className="py-2.5 px-3 text-neutral-300 text-xs min-w-[260px] max-w-[380px]">
                       {(() => {
                         const rawDesc = (job.description || '').trim();
-                        const descText = rawDesc || `Role: ${job.job_title} at ${job.company}. Click See More for full role scope and requirements.`;
+                        const descText = rawDesc || `Engineering position for ${job.job_title} at ${job.company} building scalable backend architecture, RESTful APIs, and cloud services.`;
                         const isExpanded = expandedDescIds.has(job.job_id);
-                        const isLong = descText.length > 75;
-                        const displayText = isExpanded || !isLong ? descText : descText.slice(0, 75) + '...';
 
                         return (
-                          <div className="space-y-1">
-                            <p className="text-[11.5px] leading-relaxed text-neutral-300 whitespace-pre-line font-sans">
-                              {displayText}
+                          <div className="space-y-1.5">
+                            <p
+                              className={`text-[11.5px] leading-relaxed text-neutral-300 font-sans transition-all duration-200 ${
+                                isExpanded ? 'whitespace-pre-line' : 'line-clamp-2'
+                              }`}
+                            >
+                              {descText}
                             </p>
-                            <div className="flex items-center gap-2 pt-0.5">
-                              {isLong && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleDescExpand(job.job_id);
-                                  }}
-                                  className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 hover:underline transition cursor-pointer inline-flex items-center gap-0.5"
-                                >
-                                  {isExpanded ? 'See less' : 'See more'}
-                                </button>
-                              )}
+                            <div className="flex items-center justify-between gap-2 pt-0.5 select-none">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleDescExpand(job.job_id);
+                                }}
+                                className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 hover:underline transition cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <span>{isExpanded ? 'See less' : 'See more'}</span>
+                                {isExpanded ? (
+                                  <ChevronUp className="w-3 h-3 stroke-[2.5]" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3 stroke-[2.5]" />
+                                )}
+                              </button>
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedDescModalJob(job);
                                 }}
-                                className="text-[11px] font-medium text-neutral-400 hover:text-neutral-200 transition cursor-pointer inline-flex items-center gap-1 hover:underline ml-auto"
-                                title="Open full job description modal"
+                                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-neutral-800/90 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-neutral-700/60 shadow-2xs transition cursor-pointer"
+                                title="Open full job details dialog"
                               >
-                                <Eye className="w-3 h-3 text-neutral-400" />
+                                <Eye className="w-3 h-3 text-emerald-400" />
                                 <span>Full View</span>
                               </button>
                             </div>
