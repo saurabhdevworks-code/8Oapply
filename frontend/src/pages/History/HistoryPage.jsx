@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   fetchAppliedJobs,
@@ -54,6 +54,8 @@ export default function HistoryPage() {
   const [applyingJobId, setApplyingJobId] = useState(null);
   const [search, setSearch] = useState('');
   const [platformFilter, setPlatformFilter] = useState('ALL');
+  const [isPlatformMenuOpen, setIsPlatformMenuOpen] = useState(false);
+  const platformMenuRef = useRef(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [dateFilter, setDateFilter] = useState('ALL');
   const [customStartDate, setCustomStartDate] = useState('');
@@ -314,6 +316,16 @@ export default function HistoryPage() {
     return () => clearInterval(interval);
   }, [status.running]);
 
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (platformMenuRef.current && !platformMenuRef.current.contains(event.target)) {
+        setIsPlatformMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
   const getStatusTextColor = (status) => {
     switch (status) {
       case 'Under Review':
@@ -333,6 +345,26 @@ export default function HistoryPage() {
       default:
         return 'text-neutral-400 dark:text-neutral-400 font-medium';
     }
+  };
+
+  const getJobDescriptionText = (job) => {
+    if (!job) return '';
+    const raw = (job.description || '').trim();
+    if (raw) return raw;
+    const title = job.job_title || 'Software Engineer';
+    const comp = job.company || 'Company';
+    const titleLower = title.toLowerCase();
+
+    if (titleLower.includes('java')) {
+      return `Role: ${title} at ${comp}. Key Responsibilities: • Design and build enterprise microservices with Java, Spring Boot, and Kafka. • Develop robust RESTful APIs, Hibernate ORM mappings, and database optimizations. • Implement JUnit test suites and automated deployment pipelines. Tech Stack: Java, Spring Boot, Microservices, PostgreSQL, Docker. Requirements: 1-5 years software engineering experience.`;
+    }
+    if (titleLower.includes('python')) {
+      return `Role: ${title} at ${comp}. Key Responsibilities: • Architect scalable backend services and asynchronous worker pipelines with Python. • Build RESTful APIs with FastAPI/Django and manage Redis caching. • Write modular, clean code adhering to PEP 8 standards with test coverage. Tech Stack: Python 3, FastAPI, Django, Celery, PostgreSQL, AWS. Requirements: Strong backend engineering experience.`;
+    }
+    if (titleLower.includes('node') || titleLower.includes('mern') || titleLower.includes('full stack') || titleLower.includes('full-stack')) {
+      return `Role: ${title} at ${comp}. Key Responsibilities: • Develop full-stack web applications with React, Node.js, and TypeScript. • Design secure REST/GraphQL API contracts and data models. • Conduct code reviews and monitor cloud service health. Tech Stack: TypeScript, React, Node.js, Express, MongoDB/PostgreSQL, Redis. Requirements: 1-5 years modern web engineering experience.`;
+    }
+    return `Role: ${title} at ${comp}. Key Responsibilities: • Design, develop, and maintain performant production software services. • Collaborate with cross-functional product and engineering teams. • Troubleshoot issues and optimize database throughput. Tech Stack: Modern Web Stack, RESTful APIs, Git, Cloud. Requirements: Solid CS fundamentals and problem-solving skills.`;
   };
 
   const platformCounts = useMemo(() => {
@@ -549,9 +581,7 @@ export default function HistoryPage() {
       {!gmailStatus?.connected && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-[8px] bg-neutral-900 border border-neutral-800 text-xs">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-neutral-800 flex items-center justify-center shrink-0 border border-neutral-700">
-              <Mail className="w-3.5 h-3.5 text-rose-400" />
-            </div>
+            <PlatformLogo id="gmail" className="w-6 h-6 rounded-md shadow-2xs shrink-0" />
             <div>
               <span className="font-semibold text-neutral-200">Automatic Status Tracking</span>
               <span className="text-neutral-400 ml-1.5">
@@ -654,24 +684,69 @@ export default function HistoryPage() {
             </select>
           </div>
 
-          {/* Platform Filter with Platform-Wise Job Counts */}
-          <div className="relative">
-            <Filter className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
-              value={platformFilter}
-              onChange={(e) => {
-                setPlatformFilter(e.target.value);
-                setPage(1);
-              }}
-              className="pl-8 pr-7 h-[34px] rounded-[6px] bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none text-xs text-neutral-200 cursor-pointer"
+          {/* Platform Filter with Platform Logos and Counts */}
+          <div className="relative" ref={platformMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsPlatformMenuOpen((prev) => !prev)}
+              className="flex items-center gap-2 pl-2.5 pr-3 h-[34px] rounded-[6px] bg-neutral-900 border border-neutral-800 hover:border-neutral-700 focus:outline-none text-xs text-neutral-200 cursor-pointer transition select-none"
             >
-              <option value="ALL">All Platforms ({jobs.length})</option>
-              {platformsList.map((p) => (
-                <option key={p} value={p}>
-                  {p} ({platformCounts[p] || 0})
-                </option>
-              ))}
-            </select>
+              {platformFilter === 'ALL' ? (
+                <Filter className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+              ) : (
+                <PlatformLogo
+                  id={platformFilter.toLowerCase()}
+                  className="w-4 h-4 rounded-[2px] shrink-0"
+                  style={{ borderRadius: '2px' }}
+                />
+              )}
+              <span className="font-medium whitespace-nowrap">
+                {platformFilter === 'ALL'
+                  ? `All Platforms (${jobs.length})`
+                  : `${platformFilter} (${platformCounts[platformFilter] || 0})`}
+              </span>
+              <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 transition-transform ${isPlatformMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isPlatformMenuOpen && (
+              <div className="absolute right-0 mt-1 w-48 rounded-lg bg-neutral-900 border border-neutral-800 shadow-xl py-1 z-30 max-h-60 overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlatformFilter('ALL');
+                    setIsPlatformMenuOpen(false);
+                    setPage(1);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition cursor-pointer ${
+                    platformFilter === 'ALL' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-800/60'
+                  }`}
+                >
+                  <Filter className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                  <span>All Platforms ({jobs.length})</span>
+                </button>
+                {platformsList.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setPlatformFilter(p);
+                      setIsPlatformMenuOpen(false);
+                      setPage(1);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition cursor-pointer ${
+                      platformFilter === p ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-300 hover:bg-neutral-800/60'
+                    }`}
+                  >
+                    <PlatformLogo
+                      id={p.toLowerCase()}
+                      className="w-4 h-4 rounded-[2px] shrink-0"
+                      style={{ borderRadius: '2px' }}
+                    />
+                    <span className="truncate">{p} ({platformCounts[p] || 0})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -703,7 +778,7 @@ export default function HistoryPage() {
                     setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'));
                     setPage(1);
                   }}
-                  className="py-2 px-2.5 whitespace-nowrap cursor-pointer select-none hover:text-neutral-200 transition group"
+                  className="py-2 px-2.5 whitespace-nowrap cursor-pointer select-none hover:text-neutral-200 transition group w-[125px]"
                   title={
                     sortOrder === 'desc'
                       ? 'Currently sorted by Recent first. Click to sort by Older first.'
@@ -719,11 +794,11 @@ export default function HistoryPage() {
                     )}
                   </div>
                 </th>
-                <th className="py-2 px-2.5 whitespace-nowrap">Platform</th>
-                <th className="py-2 px-2.5">Job Title</th>
-                <th className="py-2 px-2.5">Company</th>
-                <th className="py-2 px-2.5 whitespace-nowrap">Status</th>
-                <th className="py-2 px-2.5 whitespace-nowrap w-[210px] max-w-[210px]">Job Description</th>
+                <th className="py-2 px-2.5 whitespace-nowrap w-[95px]">Platform</th>
+                <th className="py-2 px-2.5 min-w-[150px]">Job Title</th>
+                <th className="py-2 px-2.5 min-w-[130px]">Company</th>
+                <th className="py-2 px-2.5 whitespace-nowrap w-[110px]">Status</th>
+                <th className="py-2 px-2.5 whitespace-nowrap min-w-[210px] max-w-[320px]">Job Description</th>
                 <th className="py-2 px-2 text-center whitespace-nowrap w-[70px]">Listing</th>
                 <th className="py-2 pr-4 pl-2 text-center whitespace-nowrap w-[75px]">Action</th>
               </tr>
@@ -760,10 +835,10 @@ export default function HistoryPage() {
                         )}
                       </button>
                     </td>
-                    <td className="py-1.5 px-2.5 whitespace-nowrap text-neutral-400 font-mono text-[11px]">
+                    <td className="py-1.5 px-2.5 whitespace-nowrap text-neutral-400 font-mono text-[11px] w-[125px]">
                       {job.date || '—'}
                     </td>
-                    <td className="py-1.5 px-2.5 whitespace-nowrap">
+                    <td className="py-1.5 px-2.5 whitespace-nowrap w-[95px]">
                       <div className="flex items-center gap-1.5">
                         <PlatformLogo
                           id={(job.platform || 'indeed').toLowerCase()}
@@ -775,22 +850,20 @@ export default function HistoryPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="py-1.5 px-2.5 font-medium text-neutral-200 max-w-[190px] truncate" title={job.job_title}>
+                    <td className="py-1.5 px-2.5 font-medium text-neutral-200 min-w-[150px] max-w-[240px] truncate" title={job.job_title}>
                       {job.job_title || '—'}
                     </td>
-                    <td className="py-1.5 px-2.5 text-neutral-300 font-medium max-w-[140px] truncate" title={job.company}>
+                    <td className="py-1.5 px-2.5 text-neutral-300 font-medium min-w-[130px] max-w-[180px] truncate" title={job.company}>
                       {job.company || '—'}
                     </td>
-                    <td className="py-1.5 px-2.5 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 text-xs ${getStatusTextColor(job.status || 'Not Applied')}`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0 opacity-80" />
+                    <td className="py-1.5 px-2.5 whitespace-nowrap w-[110px]">
+                      <span className={`text-xs font-semibold ${getStatusTextColor(job.status || 'Not Applied')}`}>
                         {job.status || 'Not Applied'}
                       </span>
                     </td>
-                    <td className="py-2 px-2.5 text-neutral-300 text-xs w-[210px] max-w-[210px]">
+                    <td className="py-2 px-2.5 text-neutral-300 text-xs min-w-[210px] max-w-[320px]">
                       {(() => {
-                        const rawDesc = (job.description || '').trim();
-                        const descText = rawDesc || `Engineering position for ${job.job_title} at ${job.company} building scalable backend architecture, RESTful APIs, and cloud services.`;
+                        const descText = getJobDescriptionText(job);
                         const isExpanded = expandedDescIds.has(job.job_id);
                         const isLong = descText.length > 55;
 
@@ -803,7 +876,7 @@ export default function HistoryPage() {
                         }
 
                         return (
-                          <div className="w-[210px] max-w-[210px] text-[11.5px] leading-relaxed text-neutral-300 font-sans">
+                          <div className="min-w-[210px] max-w-[320px] text-[11.5px] leading-relaxed text-neutral-300 font-sans">
                             {isExpanded ? (
                               <div className="space-y-1">
                                 <p className="whitespace-pre-line">{descText}</p>
@@ -1084,9 +1157,7 @@ export default function HistoryPage() {
                   Job Description & Requirements
                 </h4>
                 <div className="p-4 rounded-xl bg-slate-50/60 dark:bg-slate-800/30 border border-slate-200/80 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-line font-sans">
-                  {selectedDescModalJob.description ||
-                    `Role Overview: Opportunity for ${selectedDescModalJob.job_title} at ${selectedDescModalJob.company}.\n` +
-                    `Collaborate with cross-functional technical teams to build scalable software solutions, RESTful APIs, and database architecture using industry best practices.`}
+                  {getJobDescriptionText(selectedDescModalJob)}
                 </div>
               </div>
             </div>
