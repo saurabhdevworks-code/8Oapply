@@ -1,17 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { fetchConfig, saveConfig, fetchStatus, startBot, stopBot, fetchAppliedJobs } from '../services/api';
+import { fetchConfig, saveConfig, fetchStatus, startBot, stopBot, fetchAppliedJobs, fetchPlatformStatus } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const BotContext = createContext(null);
 
 export function BotProvider({ children }) {
   const { user } = useAuth();
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState({});
   const [status, setStatus] = useState({ running: false, uptime_seconds: 0, pid: null });
   const [appliedCount, setAppliedCount] = useState(0);
   const [totalJobsCount, setTotalJobsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [platformsStatus, setPlatformsStatus] = useState(null);
 
   // 3 App Themes: 'light' (Clean Slate), 'dark' (Midnight Dark), 'indigo' (Deep Ocean)
   const [theme, setTheme] = useState(() => {
@@ -49,11 +50,15 @@ export function BotProvider({ children }) {
 
   const loadInitialData = useCallback(async () => {
     try {
-      const [cfg, stat, jobs] = await Promise.all([
+      const [cfg, stat, jobs, platData] = await Promise.all([
         fetchConfig().catch(() => null),
         fetchStatus().catch(() => ({ running: false })),
         fetchAppliedJobs().catch(() => []),
+        fetchPlatformStatus().catch(() => null),
       ]);
+      if (platData?.platforms) {
+        setPlatformsStatus(platData.platforms);
+      }
       if (cfg) {
         setConfig(cfg);
         if (cfg.theme && !localStorage.getItem('8oapply_theme') && !localStorage.getItem('8omate_theme') && !localStorage.getItem('jobbot_theme')) {
@@ -129,19 +134,87 @@ export function BotProvider({ children }) {
     return { complete: true };
   };
 
+  const reloadPlatformStatus = useCallback(async () => {
+    try {
+      const data = await fetchPlatformStatus();
+      if (data?.platforms) {
+        setPlatformsStatus(data.platforms);
+        return data.platforms;
+      }
+    } catch (err) {
+      console.error('Failed to reload platform status:', err);
+    }
+    return null;
+  }, []);
+
+  const checkRunnerReadiness = useCallback((cfg = config, plats = platformsStatus) => {
+    const profileCheck = checkProfileCompleteness(cfg);
+    if (!profileCheck.complete) {
+      return {
+        ready: false,
+        reason: profileCheck.reason,
+        connectedCount: 0,
+        readyCount: 0,
+      };
+    }
+
+    if (!plats) {
+      return { ready: true, readyCount: 1, connectedCount: 1 };
+    }
+
+    const entries = Object.entries(plats);
+    const connected = entries.filter(([k, p]) => Boolean(p.connected));
+    const ready = entries.filter(([k, p]) => Boolean(p.connected) && Boolean(p.enabled));
+
+    if (connected.length === 0) {
+      return {
+        ready: false,
+        reason: 'First connect at least one platform',
+        connectedCount: 0,
+        readyCount: 0,
+      };
+    }
+
+    if (ready.length === 0) {
+      const connNames = connected.map(([k]) => k.charAt(0).toUpperCase() + k.slice(1)).join(', ');
+      return {
+        ready: false,
+        reason: 'At least one platform must be enabled',
+        connectedCount: connected.length,
+        readyCount: 0,
+      };
+    }
+
+    if (!cfg?.job_titles?.length || !cfg?.locations?.length) {
+      return {
+        ready: false,
+        reason: 'First add target job titles & locations in Search Targets & Preferences',
+        connectedCount: connected.length,
+        readyCount: ready.length,
+      };
+    }
+
+    return {
+      ready: true,
+      connectedCount: connected.length,
+      readyCount: ready.length,
+    };
+  }, [config, platformsStatus]);
+
   const handleStart = async () => {
-    const check = checkProfileCompleteness();
-    if (!check.complete) {
-      showToast(check.reason, 'error');
+    const readiness = checkRunnerReadiness();
+    if (!readiness.ready) {
+      showToast(readiness.reason, 'error');
       return;
     }
     try {
       await startBot();
-      showToast('Bot started successfully! Watch live logs.', 'success');
+      showToast('Runner started successfully! Watch live logs.', 'success');
       const stat = await fetchStatus();
       setStatus(stat);
+      reloadPlatformStatus();
     } catch (err) {
-      showToast(err.message || 'Failed to start bot', 'error');
+      showToast(err.message || 'Failed to start runner', 'error');
     }
   };
 
@@ -196,6 +269,9 @@ export function BotProvider({ children }) {
         theme,
         applyTheme,
         checkProfileCompleteness,
+        checkRunnerReadiness,
+        platformsStatus,
+        reloadPlatformStatus,
         handleStart,
         handleStop,
         handleSaveConfig,
@@ -213,3 +289,6 @@ export function useBot() {
   if (!ctx) throw new Error('useBot must be used within BotProvider');
   return ctx;
 }
+
+export const useEightOApply = useBot;
+export const EightOApplyProvider = BotProvider;

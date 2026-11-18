@@ -1119,7 +1119,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Active Document ({getResumeDisplayName()})
+                  Active Document{resumeInfo.exists && getResumeDisplayName() ? ` (${getResumeDisplayName()})` : ''}
                 </h3>
               </div>
               <span className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1161,7 +1161,7 @@ export default function SettingsPage() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-[4px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>{uploading ? 'Uploading...' : 'Replace Resume'}</span>
+                  <span>{uploading ? 'Uploading...' : resumeInfo.exists ? 'Replace Resume' : 'Upload Resume'}</span>
                 </button>
               </div>
             </div>

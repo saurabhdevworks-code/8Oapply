@@ -22,10 +22,11 @@ import { useBot } from '../../context/BotContext';
 import { fetchResponseMetrics } from '../../services/api';
 
 export default function Sidebar() {
-  const { status, handleStart, handleStop, appliedCount, totalJobsCount, theme } = useBot();
+  const { status, handleStart, handleStop, appliedCount, totalJobsCount, theme, checkRunnerReadiness } = useBot();
   const [positiveCount, setPositiveCount] = useState(0);
 
   const isDarkTheme = theme === 'dark' || theme === 'indigo';
+  const readiness = checkRunnerReadiness ? checkRunnerReadiness() : { ready: true, readyCount: 1, connectedCount: 1 };
 
   useEffect(() => {
     fetchResponseMetrics()
@@ -132,22 +133,34 @@ export default function Sidebar() {
         ) : (
           <div className="rounded-[6px] bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-3 shadow-xs">
             <div className="flex items-center justify-between gap-2.5">
-              {/* Left Area: Idle info (Dot removed) */}
+              {/* Left Area: Idle info */}
               <div className="flex-1 min-w-0">
                 <h4 className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight">
                   Runner Idle
                 </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-1 truncate">
-                  Standby / Ready
+                <p className={`text-[11px] font-medium mt-1 truncate ${
+                  readiness.ready 
+                    ? 'text-slate-500 dark:text-slate-400' 
+                    : 'text-amber-600 dark:text-amber-400'
+                }`}>
+                  {readiness.ready
+                    ? `Ready (${readiness.readyCount} active)`
+                    : readiness.connectedCount === 0
+                    ? 'No platforms connected'
+                    : '0 platforms enabled'}
                 </p>
               </div>
 
-              {/* Right: Circular Blue Play/Start Button */}
+              {/* Right: Circular Play Button */}
               <button
                 onClick={handleStart}
-                title="Start Engine"
+                title={readiness.ready ? "Start Engine" : readiness.reason}
                 style={{ borderRadius: '50%' }}
-                className="btn-circle w-10 h-10 aspect-square bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition shadow-sm cursor-pointer shrink-0"
+                className={`btn-circle w-10 h-10 aspect-square text-white flex items-center justify-center transition shadow-sm cursor-pointer shrink-0 ${
+                  readiness.ready
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-slate-400 hover:bg-slate-500 dark:bg-slate-700 dark:hover:bg-slate-600'
+                }`}
               >
                 <Play className="w-4 h-4 fill-white text-white ml-0.5" />
               </button>

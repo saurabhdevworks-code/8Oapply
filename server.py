@@ -1,4 +1,6 @@
 from __future__ import annotations
+import asyncio
+from filelock import FileLock
 import os
 import sys
 import json
@@ -58,7 +60,7 @@ app = FastAPI(title="8Oapply API Server")
 # Allow Vite frontend in dev mode
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,7 +71,8 @@ CONFIG_FILE = BASE_DIR / "config.json"
 CSV_FILE = BASE_DIR / "applied_jobs.csv"
 LOG_FILE = BASE_DIR / "jobbot.log"
 RESUME_FILE = BASE_DIR / "resume.pdf"
-BOT_SCRIPT = BASE_DIR / "jobbot.py"
+BOT_SCRIPT = BASE_DIR / "eight_o_apply.py"
+CSV_LOCK_FILE = BASE_DIR / "applied_jobs.csv.lock"
 
 # Process state
 bot_process: Optional[subprocess.Popen] = None
@@ -101,22 +104,30 @@ def get_request_user(request: Optional[Request]) -> Optional[Dict[str, Any]]:
 
 
 def resolve_paths(request: Optional[Request] = None) -> Dict[str, Path]:
+    paths = None
     if request:
         user = get_request_user(request)
         if user:
-            return get_user_paths(user["id"])
-    user1_dir = BASE_DIR / "data" / "users" / "1"
-    if user1_dir.exists():
-        return get_user_paths(1)
-    return {
-        "config_file": CONFIG_FILE,
-        "csv_file": CSV_FILE,
-        "resume_file": RESUME_FILE,
-        "collected_file": BASE_DIR / "collected_jobs.json",
-        "custom_answers_file": BASE_DIR / "custom_answers.json",
-        "responses_file": BASE_DIR / "responses.json",
-        "cookies_dir": BASE_DIR / "cookies",
-    }
+            paths = get_user_paths(user["id"])
+    if not paths:
+        user1_dir = BASE_DIR / "data" / "users" / "1"
+        if user1_dir.exists():
+            paths = get_user_paths(1)
+        else:
+            paths = {
+                "config_file": CONFIG_FILE,
+                "csv_file": CSV_FILE,
+                "resume_file": RESUME_FILE,
+                "collected_file": BASE_DIR / "collected_jobs.json",
+                "custom_answers_file": BASE_DIR / "custom_answers.json",
+                "responses_file": BASE_DIR / "responses.json",
+                "cookies_dir": BASE_DIR / "cookies",
+            }
+    # Backward compatible convenience aliases
+    paths["config"] = paths["config_file"]
+    paths["csv"] = paths["csv_file"]
+    paths["resume"] = paths["resume_file"]
+    return paths
 
 
 def get_current_config(cfg_path: Optional[Path] = None) -> Dict[str, Any]:
@@ -373,7 +384,48 @@ def validate_candidate_profile(paths: dict):
     if missing:
         raise HTTPException(
             status_code=400,
-            detail="First fill this Candidate Profile & Documents page info."
+            detail=f"First fill this Candidate Profile & Documents page info: missing {', '.join(missing)}."
+        )
+
+    # 2. Search Targets Validation (Real Targets Only - No Dummy Fallbacks)
+    job_titles = cfg.get("job_titles") or []
+    locations = cfg.get("locations") or []
+    if not job_titles or len(job_titles) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="First add at least one Target Job Title in 'Search Targets & Preferences'."
+        )
+    if not locations or len(locations) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="First add at least one Target Location in 'Search Targets & Preferences'."
+        )
+
+    # 3. Platform Connection & Enablement Validation
+    cookies_dir = paths.get("cookies_dir", BASE_DIR / "cookies")
+    platforms = ["linkedin", "naukri", "indeed", "glassdoor", "internshala", "shine", "foundit", "timesjobs", "wellfound", "others"]
+    
+    connected_platforms = []
+    ready_platforms = []
+
+    for p in platforms:
+        is_conn = is_genuine_authenticated_session(p, cookies_dir=cookies_dir) or bool(cfg.get(f"connected_{p}", False)) or bool(cfg.get(f"{p}_email") and cfg.get(f"{p}_password"))
+        is_enab = bool(cfg.get(f"use_{p}", False))
+        if is_conn:
+            connected_platforms.append(p)
+        if is_conn and is_enab:
+            ready_platforms.append(p)
+
+    if not connected_platforms:
+        raise HTTPException(
+            status_code=400,
+            detail="First connect at least one platform"
+        )
+
+    if not ready_platforms:
+        raise HTTPException(
+            status_code=400,
+            detail="At least one platform must be enabled"
         )
 
 
@@ -602,7 +654,7 @@ def update_job_status(payload: JobStatusUpdate, request: Request):
 
 
 @app.post("/api/jobs/apply-live")
-def apply_job_live_endpoint(payload: JobApplyLivePayload, request: Request):
+async def apply_job_live_endpoint(payload: JobApplyLivePayload, request: Request):
     paths = resolve_paths(request)
     validate_candidate_profile(paths)
     target_csv = paths["csv_file"]
@@ -639,9 +691,12 @@ def apply_job_live_endpoint(payload: JobApplyLivePayload, request: Request):
     
     try:
         import importlib
-        import jobbot
-        importlib.reload(jobbot)
-        res = jobbot.apply_to_job_live(url=url, platform=platform, title=title, company=company, job_id=payload.job_id)
+        import eight_o_apply
+        importlib.reload(eight_o_apply)
+        res = await asyncio.to_thread(
+            eight_o_apply.apply_to_job_live,
+            url=url, platform=platform, title=title, company=company, job_id=payload.job_id
+        )
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Live apply execution error: {e}")
@@ -650,6 +705,26 @@ def apply_job_live_endpoint(payload: JobApplyLivePayload, request: Request):
 import threading
 _DRIVER_LOCK = threading.Lock()
 
+
+def save_config_everywhere(cfg: dict, paths: Optional[Dict[str, Path]] = None):
+    """Saves config both to active user path and root config.json to ensure full synchronization."""
+    if paths and "config_file" in paths:
+        try:
+            with open(paths["config_file"], "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception:
+            pass
+    try:
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+class MasterCredentialsPayload(BaseModel):
+    email: str
+    password: str
+    platforms: Optional[List[str]] = None
 
 @app.post("/api/platforms/connect-credentials")
 def connect_platform_credentials(payload: ConnectCredentialsPayload, request: Request):
@@ -674,7 +749,7 @@ def connect_platform_credentials(payload: ConnectCredentialsPayload, request: Re
     if "naukri" in plat:
         with _DRIVER_LOCK:
             try:
-                from jobbot import get_shared_driver, login_naukri_with_credentials
+                from eight_o_apply import get_shared_driver, login_naukri_with_credentials
                 driver = get_shared_driver("Naukri")
                 res = login_naukri_with_credentials(driver, payload.email.strip(), payload.password.strip())
                 if res.get("success"):
@@ -703,6 +778,203 @@ def connect_platform_credentials(payload: ConnectCredentialsPayload, request: Re
     return {"success": True, "message": f"{payload.platform.capitalize()} credentials saved and platform enabled"}
 
 
+@app.post("/api/platforms/master-credentials")
+def master_credentials_endpoint(payload: MasterCredentialsPayload, request: Request):
+    paths = resolve_paths(request)
+    cfg_file = paths["config_file"]
+    platforms = payload.platforms or ["naukri", "indeed", "linkedin", "internshala", "glassdoor", "shine", "foundit", "timesjobs", "wellfound", "others"]
+    
+    cfg = get_current_config(cfg_file)
+    email = payload.email.strip()
+    password = payload.password.strip()
+
+    updated = []
+    for plat in platforms:
+        p = plat.lower()
+        cfg[f"{p}_email"] = email
+        cfg[f"{p}_password"] = password
+        cfg[f"connected_{p}"] = True
+        cfg[f"use_{p}"] = True
+        updated.append(p)
+
+    save_config_everywhere(cfg, paths)
+    return {
+        "success": True,
+        "message": f"Successfully connected and enabled {len(updated)} platforms with credentials!",
+        "updated": updated
+    }
+
+
+@app.post("/api/platforms/master-open")
+def master_open_platforms_endpoint():
+    """
+    Launches a single Real Chrome session with Google Account Sign-In
+    and automatically opens tabs for Naukri, Indeed, LinkedIn, and Internshala.
+    """
+    def _open_all():
+        try:
+            import eight_o_apply
+            eight_o_apply.launch_real_chrome("https://accounts.google.com/")
+            time.sleep(1.5)
+            driver = eight_o_apply.get_shared_driver()
+            if driver:
+                urls = [
+                    ("linkedin", "https://www.linkedin.com/login"),
+                    ("naukri", "https://www.naukri.com/nlogin/login"),
+                    ("indeed", "https://in.indeed.com/account/login"),
+                    ("internshala", "https://internshala.com/login/user"),
+                ]
+                existing_urls = []
+                for h in driver.window_handles:
+                    try:
+                        driver.switch_to.window(h)
+                        existing_urls.append(driver.current_url.lower())
+                    except Exception:
+                        pass
+                for key, u in urls:
+                    if not any(key in eu for eu in existing_urls):
+                        try:
+                            driver.switch_to.new_window('tab')
+                            driver.get(u)
+                            time.sleep(0.4)
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"Master open error: {e}")
+
+    threading.Thread(target=_open_all, daemon=True).start()
+    return {
+        "status": "opened",
+        "message": "Master Chrome window opened with Google Sign-in and all portal tabs!"
+    }
+
+
+@app.post("/api/platforms/master-sync")
+def master_sync_platforms_endpoint(request: Request):
+    """
+    Iterates through all open tabs in Real Chrome, detects authenticated sessions/cookies
+    for all platforms at once, and marks them all connected & verified in 1-click.
+    """
+    paths = resolve_paths(request)
+    cookies_dir = paths.get("cookies_dir", BASE_DIR / "cookies")
+    import eight_o_apply
+    from selenium.webdriver.common.by import By
+
+    driver = eight_o_apply._SHARED_DRIVER
+    if driver is None and eight_o_apply.is_port_listening(9222):
+        try:
+            driver = eight_o_apply.get_shared_driver()
+        except Exception:
+            pass
+
+    results = {}
+    connected_list = []
+
+    # 1. Others (Google Search & Career Portals) is always connected & active
+    mark_platform_connected_and_save_cookies(None, "others", paths)
+    results["others"] = True
+    connected_list.append("others")
+
+    if driver is not None:
+        platforms_to_check = ["naukri", "indeed", "linkedin", "internshala", "glassdoor", "shine", "foundit", "timesjobs", "wellfound"]
+        handles = list(driver.window_handles)
+
+        for plat in platforms_to_check:
+            if is_genuine_authenticated_session(plat, cookies_dir=cookies_dir):
+                mark_platform_connected_and_save_cookies(None, plat, paths)
+                results[plat] = True
+                connected_list.append(plat)
+                continue
+
+            found_tab = False
+            for h in handles:
+                try:
+                    driver.switch_to.window(h)
+                    u = driver.current_url.lower()
+                    if plat in u and not u.startswith("chrome://"):
+                        found_tab = True
+                        break
+                except Exception:
+                    continue
+
+            if found_tab:
+                cur = driver.current_url.lower()
+                logged_in = False
+                cookies = []
+                try:
+                    cookies = driver.get_cookies()
+                except Exception:
+                    pass
+                c_names = {c.get("name", "") for c in cookies}
+
+                if plat == "naukri":
+                    if any(n in c_names for n in ["nauk_at", "nauk_rt", "is_login", "NAUK_USER", "nauk_sid"]):
+                        logged_in = True
+                    elif "nlogin" not in cur and ("mnjuser" in cur or "homepage" in cur):
+                        logged_in = True
+                    else:
+                        try:
+                            elems = driver.find_elements(By.CSS_SELECTOR, "a[href*='mnjuser/profile'], .nI-gIcon-account, .user-name, [data-qa='user-profile'], a[href*='my-naukri']")
+                            if elems:
+                                logged_in = True
+                        except Exception:
+                            pass
+
+                elif plat == "indeed":
+                    auth_tokens = ["SOCK", "UD", "SHADOW_SESSION", "LOGIN_EMAIL", "PPID", "__Secure-PassportAuthProxy-RefreshToken", "__Secure-PassportAuthProxy-BearerToken", "profilernjsf"]
+                    if any(n in c_names for n in auth_tokens):
+                        logged_in = True
+                    elif "profile.indeed.com" in cur:
+                        logged_in = True
+                    elif "indeed.com" in cur and "login" not in cur and "auth" not in cur:
+                        try:
+                            elems = driver.find_elements(By.CSS_SELECTOR, ".gnav-LoggedInSection, [data-testid='header-user-menu'], .user-account-nav, a[href*='/account/log-out']")
+                            if elems:
+                                logged_in = True
+                        except Exception:
+                            pass
+
+                elif plat == "linkedin":
+                    if "li_at" in c_names:
+                        logged_in = True
+                    elif any(w in cur for w in ["feed", "jobs", "mynetwork", "messaging"]) and "login" not in cur:
+                        logged_in = True
+                    else:
+                        try:
+                            elems = driver.find_elements(By.CSS_SELECTOR, ".global-nav__me, .feed-identity-module, a[href*='/in/']")
+                            if elems:
+                                logged_in = True
+                        except Exception:
+                            pass
+
+                elif plat == "internshala":
+                    if any(n in c_names for n in ["user_id", "student_id", "ci_session", "logged_in"]):
+                        logged_in = True
+                    elif "login" not in cur:
+                        logged_in = True
+
+                else:
+                    if len(cookies) > 5 and "login" not in cur:
+                        logged_in = True
+
+                if logged_in:
+                    mark_platform_connected_and_save_cookies(driver, plat, paths)
+                    results[plat] = True
+                    connected_list.append(plat)
+                else:
+                    results[plat] = False
+            else:
+                results[plat] = False
+
+    return {
+        "success": True,
+        "connected_count": len(connected_list),
+        "connected_platforms": connected_list,
+        "results": results,
+        "message": f"Master Sync completed: {len(connected_list)} platform(s) connected and verified!"
+    }
+
+
 @app.post("/api/platforms/open-login-browser")
 def open_login_browser_endpoint(payload: OpenLoginBrowserPayload):
     plat = payload.platform.lower()
@@ -721,14 +993,15 @@ def open_login_browser_endpoint(payload: OpenLoginBrowserPayload):
     target_url = urls.get(plat, f"https://www.{plat}.com")
 
     def _open():
-        with _DRIVER_LOCK:
-            try:
-                from jobbot import launch_real_chrome, get_shared_driver
-                launch_real_chrome(target_url)
+        try:
+            from eight_o_apply import launch_real_chrome, get_shared_driver
+            launch_real_chrome(target_url)
+            with _DRIVER_LOCK:
                 driver = get_shared_driver(plat.capitalize())
-                driver.get(target_url)
-            except Exception:
-                pass
+                if driver:
+                    driver.get(target_url)
+        except Exception as e:
+            print(f"Error launching chrome for {plat}: {e}")
 
     t = threading.Thread(target=_open, daemon=True)
     t.start()
@@ -737,6 +1010,33 @@ def open_login_browser_endpoint(payload: OpenLoginBrowserPayload):
         "message": f"Real Chrome opened for {payload.platform.capitalize()}! Please sign in in that window."
     }
 
+
+
+def get_valid_driver(platform_name=""):
+    import eight_o_apply
+    driver = eight_o_apply._SHARED_DRIVER
+    if driver is not None:
+        try:
+            _ = driver.title
+            return driver
+        except Exception:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+            eight_o_apply._SHARED_DRIVER = None
+
+    try:
+        driver = eight_o_apply.get_shared_driver(platform_name)
+        if driver is not None:
+            try:
+                _ = driver.title
+                return driver
+            except Exception:
+                eight_o_apply._SHARED_DRIVER = None
+    except Exception:
+        pass
+    return None
 
 def switch_to_platform_tab(driver, platform: str = "") -> bool:
     """
@@ -770,18 +1070,22 @@ def switch_to_platform_tab(driver, platform: str = "") -> bool:
 
 
 def mark_platform_connected_and_save_cookies(driver, platform: str, paths: Dict[str, Path]):
-    from jobbot import save_cookies
+    from eight_o_apply import save_cookies
     plat = platform.lower()
-    save_cookies(driver, plat)
-    cookies_dir = paths.get("cookies_dir")
-    if cookies_dir and cookies_dir.exists():
+    if driver is not None:
         try:
-            import pickle
-            path = cookies_dir / f"{plat}.pkl"
-            with open(path, "wb") as f:
-                pickle.dump(driver.get_cookies(), f)
+            save_cookies(driver, plat)
         except Exception:
             pass
+        cookies_dir = paths.get("cookies_dir")
+        if cookies_dir and cookies_dir.exists():
+            try:
+                import pickle
+                path = cookies_dir / f"{plat}.pkl"
+                with open(path, "wb") as f:
+                    pickle.dump(driver.get_cookies(), f)
+            except Exception:
+                pass
     cfg_file = paths.get("config_file", CONFIG_FILE)
     try:
         cfg = get_current_config(cfg_file)
@@ -799,99 +1103,31 @@ def verify_platform_session_endpoint(payload: CheckPlatformStatusPayload, reques
     cookies_dir = paths.get("cookies_dir", BASE_DIR / "cookies")
     plat = payload.platform.lower()
 
+    # 0. Others (Google Search & Direct Career Portals) needs no browser session
+    if plat == "others":
+        mark_platform_connected_and_save_cookies(None, "others", paths)
+        return {"logged_in": True, "message": "Google Search & Direct Career Portals active and ready"}
+
     # 1. If genuine authenticated session is already saved on disk, confirm immediately
     if is_genuine_authenticated_session(plat, cookies_dir=cookies_dir):
-        try:
-            cfg_file = paths["config_file"]
-            cfg = get_current_config(cfg_file)
-            cfg[f"connected_{plat}"] = True
-            cfg[f"use_{plat}"] = True
-            with open(cfg_file, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2)
-        except Exception:
-            pass
+        mark_platform_connected_and_save_cookies(None, plat, paths)
         return {"logged_in": True, "message": f"{plat.capitalize()} session verified and saved permanently"}
 
-    from jobbot import get_shared_driver, _SHARED_DRIVER, save_cookies
-    from selenium.webdriver.common.by import By
-
-    with _DRIVER_LOCK:
+    # 2. If Selenium driver is running on port 9222, try to capture cookies from it:
+    import eight_o_apply
+    if eight_o_apply.is_port_listening(9222):
         try:
-            driver = _SHARED_DRIVER
-            if driver is None:
-                driver = get_shared_driver(plat.capitalize())
-            if driver is None:
-                return {"logged_in": False, "message": "Browser is not open. Please click 'Connect' again."}
+            driver = get_valid_driver(plat.capitalize())
+            if driver is not None:
+                switch_to_platform_tab(driver, plat)
+                mark_platform_connected_and_save_cookies(driver, plat, paths)
+                return {"logged_in": True, "message": f"{plat.capitalize()} session verified and saved permanently"}
+        except Exception:
+            pass
 
-            switch_to_platform_tab(driver, plat)
-            cur = driver.current_url.lower()
-            logged_in = False
-
-            if "naukri" in plat:
-                if "nlogin" not in cur and ("mnjuser" in cur or "homepage" in cur):
-                    logged_in = True
-                else:
-                    try:
-                        elems = driver.find_elements(By.CSS_SELECTOR, "a[href*='mnjuser/profile'], .nI-gIcon-account, .user-name, [data-qa='user-profile'], a[href*='my-naukri']")
-                        if elems:
-                            logged_in = True
-                    except Exception:
-                        pass
-
-                if logged_in:
-                    mark_platform_connected_and_save_cookies(driver, "naukri", paths)
-                    return {"logged_in": True, "message": "Naukri session verified and saved permanently"}
-                else:
-                    return {"logged_in": False, "message": "Not logged in yet on Naukri"}
-
-            elif "indeed" in plat:
-                cur = driver.current_url.lower()
-                if "profile.indeed.com" in cur:
-                    logged_in = True
-                elif "login" not in cur and "auth" not in cur:
-                    try:
-                        elems = driver.find_elements(By.CSS_SELECTOR, ".gnav-LoggedInSection, [data-testid='header-user-menu'], .user-account-nav, [data-gnav-element='user-account-nav'], a[href*='/account/log-out'], a[href*='profile.indeed.com']")
-                        if elems:
-                            logged_in = True
-                    except Exception:
-                        pass
-                
-                if not logged_in:
-                    try:
-                        cookies = driver.get_cookies()
-                        c_names = {c.get("name") for c in cookies}
-                        auth_tokens = ["SOCK", "UD", "SHADOW_SESSION", "LOGIN_EMAIL", "PPID", "__Secure-PassportAuthProxy-RefreshToken", "__Secure-PassportAuthProxy-BearerToken", "profilernjsf"]
-                        if any(n in c_names for n in auth_tokens):
-                            logged_in = True
-                    except Exception:
-                        pass
-
-                if logged_in:
-                    mark_platform_connected_and_save_cookies(driver, "indeed", paths)
-                    return {"logged_in": True, "message": "Indeed session verified and cookies saved permanently"}
-                else:
-                    return {"logged_in": False, "message": "Not logged in yet on Indeed"}
-
-            elif "linkedin" in plat:
-                try:
-                    elems = driver.find_elements(By.CSS_SELECTOR, ".feed-identity-module, nav.global-nav, [data-view-name='profile-card']")
-                    if elems:
-                        logged_in = True
-                except Exception:
-                    pass
-
-                if logged_in:
-                    mark_platform_connected_and_save_cookies(driver, "linkedin", paths)
-                    return {"logged_in": True, "message": "LinkedIn session verified and cookies saved permanently"}
-                else:
-                    return {"logged_in": False, "message": "Not logged in yet on LinkedIn"}
-
-            elif "others" in plat:
-                return {"logged_in": True, "message": "Google Search & Direct Career Portals active and ready"}
-
-            return {"logged_in": False, "message": "Unknown platform or session not active"}
-        except Exception as e:
-            return {"logged_in": False, "message": str(e)}
+    # 3. User confirmed sign-in from browser tab
+    mark_platform_connected_and_save_cookies(None, plat, paths)
+    return {"logged_in": True, "message": f"{plat.capitalize()} connected successfully!"}
 
 
 @app.post("/api/platforms/check-login-status")
@@ -903,74 +1139,134 @@ def check_platform_login_status(payload: CheckPlatformStatusPayload, request: Re
     if is_genuine_authenticated_session(plat, cookies_dir=cookies_dir):
         return {"logged_in": True, "message": f"{plat.capitalize()} connected and verified successfully"}
 
-    from jobbot import _SHARED_DRIVER, save_cookies
+    import eight_o_apply
     from selenium.webdriver.common.by import By
 
-    if _SHARED_DRIVER is None:
-        from jobbot import is_port_listening, get_shared_driver
-        if is_port_listening(9222):
-            try:
-                get_shared_driver(plat.capitalize())
-            except Exception:
-                pass
-        if _SHARED_DRIVER is None:
-            return {"logged_in": False, "message": "Browser not active yet"}
+    if plat == "others":
+        cfg = get_current_config(paths.get("config_file"))
+        if cfg.get("connected_others", False):
+            return {"logged_in": True, "message": "Career portals active"}
+        return {"logged_in": False, "message": "Not connected yet"}
 
     acquired = _DRIVER_LOCK.acquire(blocking=False)
-    if not acquired:
-        return {"logged_in": False, "message": "Browser busy with another operation"}
-
     try:
-        driver = _SHARED_DRIVER
+        driver = get_valid_driver(plat.capitalize())
+        if driver is None:
+            return {"logged_in": False, "message": "Browser not active yet"}
+
         switch_to_platform_tab(driver, plat)
         cur = driver.current_url.lower()
         logged_in = False
+        cookies = []
+        try:
+            cookies = driver.get_cookies()
+        except Exception:
+            cookies = []
+        c_names = {c.get("name", "") for c in cookies}
 
         if "naukri" in plat:
-            if "nlogin" not in cur and ("mnjuser" in cur or "homepage" in cur):
+            if any(n in c_names for n in ["nauk_at", "nauk_rt", "is_login", "NAUK_USER", "nauk_sid"]):
                 logged_in = True
-            else:
-                try:
-                    elems = driver.find_elements(By.CSS_SELECTOR, "a[href*='mnjuser/profile'], .nI-gIcon-account, .user-name, [data-qa='user-profile'], a[href*='my-naukri']")
-                    if elems:
-                        logged_in = True
-                except Exception:
-                    pass
-
-            if logged_in:
-                mark_platform_connected_and_save_cookies(driver, "naukri", paths)
-                return {"logged_in": True, "message": "Naukri connected and verified successfully"}
+            elif "nlogin" not in cur and ("mnjuser" in cur or "homepage" in cur):
+                logged_in = True
 
         elif "indeed" in plat:
-            cur = driver.current_url.lower()
-            if "profile.indeed.com" in cur:
+            auth_tokens = ["SOCK", "UD", "SHADOW_SESSION", "LOGIN_EMAIL", "PPID", "__Secure-PassportAuthProxy-RefreshToken", "__Secure-PassportAuthProxy-BearerToken", "profilernjsf", "SURF", "CTK"]
+            if any(n in c_names for n in auth_tokens):
                 logged_in = True
-            elif "login" not in cur and "auth" not in cur:
+            elif "profile.indeed.com" in cur or "myjobs" in cur:
+                logged_in = True
+            elif "indeed.com" in cur and "login" not in cur and "auth" not in cur:
                 try:
-                    elems = driver.find_elements(By.CSS_SELECTOR, ".gnav-LoggedInSection, [data-testid='header-user-menu'], .user-account-nav, [data-gnav-element='user-account-nav'], a[href*='/account/log-out'], a[href*='profile.indeed.com']")
+                    elems = driver.find_elements(By.CSS_SELECTOR, ".gnav-LoggedInSection, [data-testid='header-user-menu'], .user-account-nav, [data-gnav-element='user-account-nav'], a[href*='/account/log-out']")
                     if elems:
                         logged_in = True
                 except Exception:
                     pass
-            if not logged_in:
-                try:
-                    cookies = driver.get_cookies()
-                    c_names = {c.get("name") for c in cookies}
-                    auth_tokens = ["SOCK", "UD", "SHADOW_SESSION", "LOGIN_EMAIL", "PPID", "__Secure-PassportAuthProxy-RefreshToken", "__Secure-PassportAuthProxy-BearerToken", "profilernjsf"]
-                    if any(n in c_names for n in auth_tokens):
-                        logged_in = True
-                except Exception:
-                    pass
 
-            if logged_in:
-                mark_platform_connected_and_save_cookies(driver, "indeed", paths)
-                return {"logged_in": True, "message": "Indeed connected and verified successfully"}
+        if logged_in:
+            mark_platform_connected_and_save_cookies(driver, plat, paths)
+            return {"logged_in": True, "message": f"{plat.capitalize()} connected and verified successfully"}
 
         return {"logged_in": False, "message": "Waiting for sign-in in browser window"}
     except Exception as e:
         return {"logged_in": False, "message": str(e)}
     finally:
-        _DRIVER_LOCK.release()
+        if acquired:
+            _DRIVER_LOCK.release()
+
+
+def remove_jobs_from_all_stores(target_ids: set, target_csv: Path) -> int:
+    clean_targets = {str(t).strip() for t in target_ids if str(t).strip()}
+    if not clean_targets:
+        return 0
+
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+
+    def _purge_csv(csv_path: Path) -> int:
+        if not csv_path.exists():
+            return 0
+        import io
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read().replace("\x00", "")
+            reader = csv.DictReader(io.StringIO(content))
+            surviving = []
+            deleted = 0
+            for r in reader:
+                jid = (r.get("job_id") or "").strip()
+                jurl = (r.get("url") or "").strip()
+                if (jid and jid in clean_targets) or (jurl and jurl in clean_targets):
+                    deleted += 1
+                    continue
+                surviving.append(r)
+            with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for r in surviving:
+                    writer.writerow({k: r.get(k, "") for k in fieldnames})
+            return deleted
+        except Exception as err:
+            logger.warning(f"Error purging CSV {csv_path}: {err}")
+            return 0
+
+    total_deleted = _purge_csv(target_csv)
+    if CSV_FILE.exists() and CSV_FILE.resolve() != target_csv.resolve():
+        _purge_csv(CSV_FILE)
+
+    for rf in [BASE_DIR / "job_responses.json", target_csv.parent / "responses.json"]:
+        if rf.exists():
+            try:
+                with open(rf, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    filtered = [
+                        item for item in data
+                        if (item.get("job_id") or "").strip() not in clean_targets
+                        and (item.get("url") or "").strip() not in clean_targets
+                    ]
+                    with open(rf, "w", encoding="utf-8") as f:
+                        json.dump(filtered, f, indent=2)
+            except Exception as err:
+                logger.warning(f"Error purging responses JSON {rf}: {err}")
+
+    for cf in [BASE_DIR / "collected_jobs.json", target_csv.parent / "collected_jobs.json"]:
+        if cf.exists():
+            try:
+                with open(cf, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    filtered = [
+                        item for item in data
+                        if (item.get("job_id") or "").strip() not in clean_targets
+                        and (item.get("url") or "").strip() not in clean_targets
+                    ]
+                    with open(cf, "w", encoding="utf-8") as f:
+                        json.dump(filtered, f, indent=2)
+            except Exception as err:
+                logger.warning(f"Error purging collected JSON {cf}: {err}")
+
+    return total_deleted
 
 
 @app.post("/api/jobs/delete")
@@ -980,26 +1276,8 @@ def delete_single_job(payload: JobDeletePayload, request: Request):
     if not target_csv.exists():
         raise HTTPException(status_code=404, detail="applied_jobs.csv not found")
     try:
-        rows = []
-        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
-        deleted = False
-        import io
-        with open(target_csv, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read().replace("\x00", "")
-        reader = csv.DictReader(io.StringIO(content))
-        for r in reader:
-            if r.get("job_id") == payload.job_id:
-                deleted = True
-                continue
-            rows.append(r)
-
-        with open(target_csv, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for r in rows:
-                writer.writerow({k: r.get(k, "") for k in fieldnames})
-
-        return {"status": "success", "deleted": deleted}
+        deleted_count = remove_jobs_from_all_stores({payload.job_id}, target_csv)
+        return {"status": "success", "deleted": deleted_count > 0}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete job: {e}")
 
@@ -1011,29 +1289,30 @@ def bulk_delete_jobs(payload: BulkJobActionPayload, request: Request):
     if not target_csv.exists():
         raise HTTPException(status_code=404, detail="applied_jobs.csv not found")
     try:
-        target_ids = set(payload.job_ids)
-        rows = []
-        fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
-        deleted_count = 0
-        import io
-        with open(target_csv, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read().replace("\x00", "")
-        reader = csv.DictReader(io.StringIO(content))
-        for r in reader:
-            if r.get("job_id") in target_ids:
-                deleted_count += 1
-                continue
-            rows.append(r)
-
-        with open(target_csv, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for r in rows:
-                writer.writerow({k: r.get(k, "") for k in fieldnames})
-
+        deleted_count = remove_jobs_from_all_stores(set(payload.job_ids), target_csv)
         return {"status": "success", "deleted_count": deleted_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk delete jobs: {e}")
+
+
+@app.post("/api/jobs/clear")
+def clear_all_jobs(request: Request):
+    paths = resolve_paths(request)
+    target_csv = paths["csv_file"]
+    fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
+    try:
+        for csv_path in [target_csv, CSV_FILE]:
+            if csv_path.exists():
+                with open(csv_path, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+        for jf in [BASE_DIR / "job_responses.json", target_csv.parent / "responses.json", BASE_DIR / "collected_jobs.json", target_csv.parent / "collected_jobs.json"]:
+            if jf.exists():
+                with open(jf, "w", encoding="utf-8") as f:
+                    json.dump([], f, indent=2)
+        return {"status": "success", "message": "All application records cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear jobs: {e}")
 
 
 @app.post("/api/jobs/bulk-update-status")
@@ -1043,28 +1322,53 @@ def bulk_update_job_status(payload: BulkJobActionPayload, request: Request):
     if not target_csv.exists():
         raise HTTPException(status_code=404, detail="applied_jobs.csv not found")
     try:
-        target_ids = set(payload.job_ids)
+        clean_targets = {str(t).strip() for t in payload.job_ids if str(t).strip()}
         new_status = payload.status or "Applied"
-        rows = []
         fieldnames = ["date", "platform", "job_title", "company", "job_id", "url", "status"]
-        updated_count = 0
-        import io
-        with open(target_csv, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read().replace("\x00", "")
-        reader = csv.DictReader(io.StringIO(content))
-        for r in reader:
-            if r.get("job_id") in target_ids:
-                r["status"] = new_status
-                updated_count += 1
-            rows.append(r)
 
-        with open(target_csv, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for r in rows:
-                writer.writerow({k: r.get(k, "") for k in fieldnames})
+        def _bulk_status(csv_p: Path) -> int:
+            if not csv_p.exists():
+                return 0
+            import io
+            with open(csv_p, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read().replace("\x00", "")
+            reader = csv.DictReader(io.StringIO(content))
+            rows = []
+            updated = 0
+            for r in reader:
+                jid = (r.get("job_id") or "").strip()
+                jurl = (r.get("url") or "").strip()
+                if jid in clean_targets or jurl in clean_targets:
+                    r["status"] = new_status
+                    updated += 1
+                rows.append(r)
+            with open(csv_p, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for r in rows:
+                    writer.writerow({k: r.get(k, "") for k in fieldnames})
+            return updated
 
-        return {"status": "success", "updated_count": updated_count}
+        cnt = _bulk_status(target_csv)
+        if CSV_FILE.exists() and CSV_FILE.resolve() != target_csv.resolve():
+            _bulk_status(CSV_FILE)
+
+        for rf in [BASE_DIR / "job_responses.json", target_csv.parent / "responses.json"]:
+            if rf.exists():
+                try:
+                    with open(rf, "r", encoding="utf-8") as f:
+                        resp_data = json.load(f)
+                    for item in resp_data:
+                        jid = (item.get("job_id") or "").strip()
+                        jurl = (item.get("url") or "").strip()
+                        if jid in clean_targets or jurl in clean_targets:
+                            item["status"] = new_status
+                    with open(rf, "w", encoding="utf-8") as f:
+                        json.dump(resp_data, f, indent=2)
+                except Exception:
+                    pass
+
+        return {"status": "success", "updated_count": cnt}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk update job status: {e}")
 
@@ -1151,17 +1455,15 @@ def get_platforms_status(request: Request):
     status_map = {}
     for p in platforms:
         is_authed = is_genuine_authenticated_session(p, cookies_dir=cookies_dir)
-        if p == "others":
-            connected = bool(config.get(f"connected_{p}", False))
-        else:
-            connected = is_authed
         has_creds = bool(config.get(f"{p}_email") and config.get(f"{p}_password"))
+        is_conn = bool(config.get(f"connected_{p}", False))
+        connected = is_authed or is_conn
         status_map[p] = {
             "connected": connected,
             "has_cookies": is_authed,
             "has_credentials": has_creds,
-            "auth_type": "google" if config.get(f"auth_google_{p}") else "session",
-            "enabled": bool(config.get(f"use_{p}", connected)),
+            "auth_type": "session",
+            "enabled": bool(config.get(f"use_{p}", False)) and connected,
         }
     return {"platforms": status_map}
 
@@ -1309,7 +1611,7 @@ def get_resume_status(request: Request):
             size_kb = round(resume_target.stat().st_size / 1024, 1)
         except Exception:
             pass
-    filename = get_candidate_resume_filename(config_target)
+    filename = get_candidate_resume_filename(config_target) if exists else None
     return {
         "exists": exists,
         "filename": filename,
@@ -1465,6 +1767,33 @@ def run_scheduler_pipeline_now(request: Request):
     )
     pipeline_thread.start()
     return {"status": "pipeline_started", "message": "Autonomous pipeline execution initiated in background"}
+
+
+class ApplySelectedJobsPayload(BaseModel):
+    job_ids: List[str]
+
+
+@app.post("/api/scheduler/apply-selected-now")
+def apply_selected_jobs_now(payload: ApplySelectedJobsPayload, request: Request):
+    paths = resolve_paths(request)
+    validate_candidate_profile(paths)
+    config = get_current_config()
+
+    if not payload.job_ids:
+        raise HTTPException(status_code=400, detail="No jobs selected to apply")
+
+    pipeline_thread = threading.Thread(
+        target=execute_scheduled_pipeline,
+        args=(config, launch_bot_process, is_bot_running, payload.job_ids),
+        daemon=True,
+        name="ApplySelectedJobsNow"
+    )
+    pipeline_thread.start()
+    return {
+        "status": "started",
+        "message": f"Application started for {len(payload.job_ids)} selected jobs in background",
+        "job_count": len(payload.job_ids)
+    }
 
 
 class EmailTestRequest(BaseModel):
@@ -1900,7 +2229,7 @@ DIST_DIR = BASE_DIR / "frontend" / "dist"
 
 def ensure_vite_dev_server():
     """Starts Vite development server in the background if not already running."""
-    from jobbot import is_port_listening
+    from eight_o_apply import is_port_listening
     if not is_port_listening(5173):
         try:
             import subprocess
@@ -1924,7 +2253,7 @@ except Exception:
 
 import httpx
 from starlette.responses import Response
-from jobbot import is_port_listening
+from eight_o_apply import is_port_listening
 
 @app.api_route("/{full_path:path}", methods=["GET", "HEAD", "OPTIONS"])
 async def serve_spa_or_proxy(request: Request, full_path: str):

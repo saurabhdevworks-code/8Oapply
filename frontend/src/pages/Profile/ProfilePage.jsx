@@ -44,6 +44,9 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   const getResumeDisplayName = () => {
+    if (!resumeInfo?.exists) {
+      return null;
+    }
     const rawName = config?.name?.trim();
     if (rawName) {
       const clean = rawName.replace(/[^\w\s-]/g, '').replace(/[\s-]+/g, '_');
@@ -737,7 +740,7 @@ export default function ProfilePage() {
           <div className="p-4 rounded-[8px] border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
               <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">Active Document ({getResumeDisplayName()})</h3>
+              <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">Active Document{resumeInfo.exists && getResumeDisplayName() ? ` (${getResumeDisplayName()})` : ''}</h3>
             </div>
 
             {/* Status indicator with Delete Button */}
@@ -756,7 +759,7 @@ export default function ProfilePage() {
                 )}
                 <div>
                   <div className="font-semibold text-slate-900 dark:text-slate-100">
-                    {resumeInfo.exists ? `${getResumeDisplayName()}` : `${getResumeDisplayName()} Not Found`}
+                    {resumeInfo.exists ? (getResumeDisplayName() || 'Resume Verified') : 'No Resume Uploaded'}
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
                     {resumeInfo.exists
@@ -796,7 +799,7 @@ export default function ProfilePage() {
             >
               <Upload className="w-5 h-5 text-slate-400 mx-auto mb-1.5" />
               <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {uploading ? 'Processing & extracting profile info...' : `Select or replace ${getResumeDisplayName()}`}
+                {uploading ? 'Processing & extracting profile info...' : resumeInfo.exists ? `Select to replace ${getResumeDisplayName() || 'resume'}` : 'Select or drop your PDF resume'}
               </div>
               <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
                 Automatically extracts your contact, education, skills, and portfolio info

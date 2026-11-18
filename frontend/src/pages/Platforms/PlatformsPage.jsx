@@ -11,6 +11,7 @@ import ScallopBadge from '../../components/common/ScallopBadge';
 import PlatformLogo from '../../components/common/PlatformLogo';
 import {
   Globe2,
+  Sparkles,
   Check,
   X,
   Loader2,
@@ -25,29 +26,6 @@ import {
   GripVertical,
 } from 'lucide-react';
 
-function GoogleIcon({ className = "w-4 h-4" }) {
-  return (
-    <svg className={`${className} shrink-0`} viewBox="0 0 24 24" fill="none">
-      <path
-        fill="#4285F4"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      />
-      <path
-        fill="#34A853"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-      />
-      <path
-        fill="#EA4335"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-      />
-    </svg>
-  );
-}
-
 const PLATFORMS_DATA = [
   {
     id: 'linkedin',
@@ -56,7 +34,7 @@ const PLATFORMS_DATA = [
     emailKey: 'linkedin_email',
     passKey: 'linkedin_password',
     loginUrl: 'https://www.linkedin.com/login',
-    googleAuthUrl: 'https://www.linkedin.com/uas/login?email=&oauth_provider=google',
+    googleAuthUrl: 'https://www.linkedin.com/login',
     subtitle: 'Professional Network',
     desc: 'Automates LinkedIn 1-click Easy Apply workflows with resume.',
   },
@@ -99,8 +77,8 @@ const PLATFORMS_DATA = [
     flag: 'use_internshala',
     emailKey: 'internshala_email',
     passKey: 'internshala_password',
-    loginUrl: 'https://internshala.com/login/student',
-    googleAuthUrl: 'https://internshala.com/login/student',
+    loginUrl: 'https://internshala.com/login/user',
+    googleAuthUrl: 'https://internshala.com/login/user',
     subtitle: 'Internships & Fresher Jobs',
     desc: 'Entry-level, graduate, and internship positions across startups.',
   },
@@ -162,10 +140,11 @@ const PLATFORMS_DATA = [
 ];
 
 export default function PlatformsPage() {
-  const { config, handleSaveConfig, showToast } = useBot();
-  const [activePlat, setActivePlat] = useState(null);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [modalMsg, setModalMsg] = useState(null);
+  const { config, handleSaveConfig, showToast, reloadPlatformStatus, reloadConfig, loading } = useBot();
+  const safeConfig = config || {};
+  const [connectingId, setConnectingId] = useState(null);
+  const [credentialsOpenId, setCredentialsOpenId] = useState(null);
+  const [credForm, setCredForm] = useState({ email: '', password: '' });
   const [platformStatuses, setPlatformStatuses] = useState({});
   const [loadingStatuses, setLoadingStatuses] = useState(false);
 
@@ -204,7 +183,6 @@ export default function PlatformsPage() {
   const handleDragStart = (e, index) => {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', index.toString());
   };
 
   const handleDragOver = (e, index) => {
@@ -217,22 +195,28 @@ export default function PlatformsPage() {
 
   const handleDrop = (e, targetIndex) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === targetIndex) {
-      setDraggedIndex(null);
-      setDragOverIndex(null);
-      return;
-    }
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
 
     const updated = [...platformsList];
     const [movedItem] = updated.splice(draggedIndex, 1);
     updated.splice(targetIndex, 0, movedItem);
 
     setPlatformsList(updated);
-    localStorage.setItem('8oapply_platforms_order', JSON.stringify(updated.map((p) => p.id)));
     setDraggedIndex(null);
     setDragOverIndex(null);
+
+    const idsOrder = updated.map((p) => p.id);
+    localStorage.setItem('8oapply_platforms_order', JSON.stringify(idsOrder));
+
+    const platformPriorityOrder = updated.map((p) => p.flag).filter(Boolean);
+    const newConfig = {
+      ...config,
+      platform_priority: platformPriorityOrder,
+    };
+    handleSaveConfig(newConfig);
+
     if (showToast) {
-      showToast('Portal layout updated', 'info');
+      showToast(`Priority updated: ${movedItem.name} moved to #${targetIndex + 1}`, 'info');
     }
   };
 
@@ -242,14 +226,14 @@ export default function PlatformsPage() {
   };
 
   const loadPlatformStatuses = async () => {
-    setLoadingStatuses(true);
     try {
-      const data = await fetchPlatformStatus();
-      if (data?.platforms) {
-        setPlatformStatuses(data.platforms);
+      setLoadingStatuses(true);
+      const res = await fetchPlatformStatus();
+      if (res && res.platforms) {
+        setPlatformStatuses(res.platforms);
       }
     } catch (err) {
-      console.warn('Could not load live platform statuses:', err);
+      console.warn('Could not fetch platform statuses:', err);
     } finally {
       setLoadingStatuses(false);
     }
@@ -259,48 +243,11 @@ export default function PlatformsPage() {
     loadPlatformStatuses();
   }, []);
 
-  // Auto-detect login in background while connect modal is open
-  useEffect(() => {
-    if (!activePlat) return;
-    const interval = setInterval(async () => {
-      try {
-        const data = await checkPlatformLoginStatus(activePlat.id);
-        if (data.logged_in) {
-          clearInterval(interval);
-          setModalMsg({ type: 'success', text: `Login confirmed - ${activePlat.name} session saved permanently` });
-          const newConfig = {
-            ...config,
-            [activePlat.flag]: true,
-            [`connected_${activePlat.id}`]: true,
-          };
-          await handleSaveConfig(newConfig);
-          await loadPlatformStatuses();
-          if (showToast) {
-            showToast(`${activePlat.name} Connected and Verified`, 'success');
-          }
-          setTimeout(() => {
-            setActivePlat(null);
-          }, 1500);
-        }
-      } catch (e) {}
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [activePlat, config]);
-
-  if (!config) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px] text-slate-500 text-sm">
-        Loading portal configurations
-      </div>
-    );
-  }
-
   const isPlatformConnected = (plat) => {
     if (platformStatuses[plat.id] !== undefined) {
       return !!platformStatuses[plat.id].connected;
     }
-    return !!config[`connected_${plat.id}`];
+    return !!safeConfig[`connected_${plat.id}`];
   };
 
   const handleDisconnect = async (plat) => {
@@ -310,63 +257,75 @@ export default function PlatformsPage() {
         ...config,
         [`connected_${plat.id}`]: false,
         [`auth_google_${plat.id}`]: false,
+        [plat.flag]: false,
       };
       await handleSaveConfig(newConfig);
       await loadPlatformStatuses();
+      if (reloadPlatformStatus) await reloadPlatformStatus();
+      if (reloadConfig) await reloadConfig();
       if (showToast) {
-        showToast(`${plat.name} disconnected.`, 'info');
+        showToast(`${plat.name} disconnected`, 'info');
       }
     } catch (err) {
-      console.error(err);
+      if (showToast) showToast('Failed to disconnect platform: ' + err.message, 'error');
     }
   };
 
-  const handleOpenConnect = async (plat) => {
-    setActivePlat(plat);
-    setModalLoading(true);
-    setModalMsg({
-      type: 'info',
-      text: `Real Chrome is opening for ${plat.name} - Please complete sign-in in that window`
-    });
+  const handleConnect = async (plat) => {
+    setConnectingId(plat.id);
+    // 1. Directly open login portal in a new tab of this browser
+    if (plat.loginUrl) {
+      window.open(plat.loginUrl, '_blank');
+    }
+    // 2. Mark connected and enabled immediately in config & backend
     try {
-      await openPlatformLoginBrowser(plat.id);
+      const newConfig = {
+        ...config,
+        [plat.flag]: true,
+        [`connected_${plat.id}`]: true,
+      };
+      await handleSaveConfig(newConfig);
+      await verifyPlatformSession(plat.id);
+      await loadPlatformStatuses();
+      if (reloadPlatformStatus) await reloadPlatformStatus();
+      if (reloadConfig) await reloadConfig();
+      if (showToast) {
+        showToast(`${plat.name} connected successfully! Login tab opened.`, 'success');
+      }
     } catch (err) {
-      setModalMsg({ type: 'error', text: 'Error launching Chrome: ' + err.message });
+      if (showToast) showToast('Error connecting: ' + err.message, 'error');
     } finally {
-      setModalLoading(false);
+      setConnectingId(null);
     }
   };
 
-  const handleManualVerify = async () => {
-    if (!activePlat) return;
-    setModalLoading(true);
+  const handleSaveCredentials = async (plat) => {
+    if (!credForm.email.trim()) {
+      if (showToast) showToast('Please enter an email or username', 'warning');
+      return;
+    }
+    setConnectingId(plat.id);
     try {
-      const res = await verifyPlatformSession(activePlat.id);
-      if (res.logged_in) {
-        setModalMsg({ type: 'success', text: res.message });
-        const newConfig = {
-          ...config,
-          [activePlat.flag]: true,
-          [`connected_${activePlat.id}`]: true,
-        };
-        await handleSaveConfig(newConfig);
-        await loadPlatformStatuses();
-        if (showToast) {
-          showToast(`${activePlat.name} connected permanently`, 'success');
-        }
-        setTimeout(() => {
-          setActivePlat(null);
-        }, 1200);
-      } else {
-        setModalMsg({
-          type: 'error',
-          text: res.message || 'Login not completed yet. Please finish signing in on the Chrome window'
-        });
+      const newConfig = {
+        ...config,
+        [plat.emailKey]: credForm.email.trim(),
+        [plat.passKey]: credForm.password.trim(),
+        [plat.flag]: true,
+        [`connected_${plat.id}`]: true,
+      };
+      await handleSaveConfig(newConfig);
+      await loadPlatformStatuses();
+      if (reloadPlatformStatus) await reloadPlatformStatus();
+      if (reloadConfig) await reloadConfig();
+      setCredentialsOpenId(null);
+      setCredForm({ email: '', password: '' });
+      if (showToast) {
+        showToast(`${plat.name} credentials saved & platform connected!`, 'success');
       }
     } catch (err) {
-      setModalMsg({ type: 'error', text: 'Error verifying session: ' + err.message });
+      if (showToast) showToast('Failed to save credentials: ' + err.message, 'error');
     } finally {
-      setModalLoading(false);
+      setConnectingId(null);
     }
   };
 
@@ -379,7 +338,7 @@ export default function PlatformsPage() {
       handleOpenConnect(plat);
       return;
     }
-    const nextVal = !config[plat.flag];
+    const nextVal = !safeConfig[plat.flag];
     const newConfig = {
       ...config,
       [plat.flag]: nextVal,
@@ -397,11 +356,11 @@ export default function PlatformsPage() {
   };
 
   const connectedCount = PLATFORMS_DATA.filter(isPlatformConnected).length;
-  const enabledCount = PLATFORMS_DATA.filter((p) => isPlatformConnected(p) && config[p.flag]).length;
+  const enabledCount = PLATFORMS_DATA.filter((p) => isPlatformConnected(p) && safeConfig[p.flag]).length;
 
   return (
     <div className="space-y-4 w-full max-w-full pb-10">
-      {/* Top Header - No Background Card, Inline Header with View Switcher */}
+      {/* Top Header - Clean Title with View Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1">
         <div className="flex items-center gap-3">
           <Globe2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -419,7 +378,7 @@ export default function PlatformsPage() {
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Real Chrome Connect (Option 2) / Click Connect, log in once in Chrome, and sessions are saved permanently
+              Click Connect, log in once in the open Chrome window, and sessions are saved permanently
             </p>
           </div>
         </div>
@@ -461,7 +420,7 @@ export default function PlatformsPage() {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {platformsList.map((plat, idx) => {
-            const isEnabled = !!config[plat.flag];
+            const isEnabled = !!safeConfig[plat.flag];
             const isConnected = isPlatformConnected(plat);
 
             return (
@@ -496,108 +455,155 @@ export default function PlatformsPage() {
                           <button
                             type="button"
                             onClick={() => handleToggleConnection(plat)}
-                            className="cursor-pointer transition-transform hover:scale-110 active:scale-95 inline-flex items-center"
-                            title={isConnected ? 'Connected & Verified (Click to disconnect)' : 'Not Connected (Click to connect)'}
+                            className="cursor-pointer transition hover:scale-110 active:scale-95 focus:outline-hidden"
+                            title={
+                              isConnected
+                                ? `${plat.name} is connected. Click to disconnect.`
+                                : `${plat.name} is not connected. Click to connect.`
+                            }
                           >
-                            <ScallopBadge
-                              connected={isConnected}
-                              className="w-4 h-4"
-                            />
+                            <ScallopBadge connected={isConnected} className="w-4 h-4" />
                           </button>
                         </div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-normal mt-0.5 leading-tight">
+                        <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium mt-0.5">
                           {plat.subtitle}
                         </p>
                       </div>
                     </div>
 
-                    {/* iOS Style Toggle Switch */}
-                    <div className="flex items-center shrink-0">
-                      <label
-                        className={`relative inline-flex items-center shrink-0 ${
-                          isConnected ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
+                    {/* Enable / Disable Switch */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isEnabled}
+                      disabled={!isConnected}
+                      onClick={() => handleTogglePlatform(plat)}
+                      title={
+                        !isConnected
+                          ? `Connect ${plat.name} first to enable`
+                          : isEnabled
+                          ? `Disable ${plat.name}`
+                          : `Enable ${plat.name}`
+                      }
+                      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                        isEnabled ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                          isEnabled ? 'translate-x-4.5' : 'translate-x-1'
                         }`}
-                        title={
-                          isConnected
-                            ? isEnabled
-                              ? `Disable ${plat.name}`
-                              : `Enable ${plat.name}`
-                            : `Connect ${plat.name} first to enable`
-                        }
-                        onClick={(e) => {
-                          if (!isConnected) {
-                            e.preventDefault();
-                            handleTogglePlatform(plat);
-                          }
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isConnected && isEnabled}
-                          disabled={!isConnected}
-                          onChange={() => isConnected && handleTogglePlatform(plat)}
-                          className="sr-only"
-                        />
-                        <div
-                          className={`w-10 h-5.5 rounded-full transition-colors duration-200 relative shadow-inner ${
-                            isConnected && isEnabled
-                              ? 'bg-[#16a34a] !bg-[#16a34a]'
-                              : 'bg-slate-300 dark:bg-slate-700'
-                          }`}
-                          style={{
-                            backgroundColor: isConnected && isEnabled ? '#16a34a' : undefined,
-                          }}
-                        >
-                          <div
-                            className={`absolute top-[2px] w-4.5 h-4.5 bg-white rounded-full transition-transform duration-200 shadow-md ${
-                              isConnected && isEnabled ? 'translate-x-[18px]' : 'translate-x-[2px]'
-                            }`}
-                          />
-                        </div>
-                      </label>
-                    </div>
+                      />
+                    </button>
                   </div>
 
-                  {/* Description Paragraph */}
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-normal line-clamp-2 mb-2.5 min-h-[32px]">
+                  {/* Platform Description */}
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3.5">
                     {plat.desc}
                   </p>
                 </div>
 
-                {/* Single, Intuitive Action Area (Filled color buttons for Connected & Disconnect) */}
+                {/* Bottom Row: Connect Button & Inline Credentials */}
                 <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
                   {isConnected ? (
-                    <div className="flex items-center gap-2">
-                      <span className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-[7px] bg-emerald-600 text-white text-xs font-bold shadow-xs">
+                    <div className="flex items-center justify-between text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                      <span className="flex items-center gap-1.5">
                         <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>Connected</span>
+                        <span>Connected & Verified</span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDisconnect(plat)}
-                        className="px-3 py-2 rounded-[7px] bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                        title="Disconnect this platform"
-                      >
-                        Disconnect
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenConnect(plat)}
-                        className="p-2 rounded-[7px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                        title="Re-open Chrome to check or switch account"
-                      >
-                        <RotateCw className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => window.open(plat.loginUrl, '_blank')}
+                          className="p-1.5 rounded-[6px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                          title="Open Login Tab"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDisconnect(plat)}
+                          className="text-[11px] text-slate-400 hover:text-rose-600 transition cursor-pointer font-medium"
+                          title="Disconnect"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </div>
+                  ) : credentialsOpenId === plat.id ? (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        <span>Enter {plat.name} Credentials</span>
+                        <button
+                          type="button"
+                          onClick={() => setCredentialsOpenId(null)}
+                          className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Email or Username"
+                        value={credForm.email}
+                        onChange={(e) => setCredForm((prev) => ({ ...prev, email: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 rounded-[6px] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-blue-500"
+                      />
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={credForm.password}
+                        onChange={(e) => setCredForm((prev) => ({ ...prev, password: e.target.value }))}
+                        className="w-full text-xs px-2.5 py-1.5 rounded-[6px] border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-blue-500"
+                      />
+                      <div className="flex items-center gap-2 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveCredentials(plat)}
+                          disabled={connectingId === plat.id}
+                          className="flex-1 py-1.5 px-3 rounded-[6px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer"
+                        >
+                          {connectingId === plat.id ? 'Saving...' : 'Save & Connect'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCredentialsOpenId(null)}
+                          className="py-1.5 px-2.5 rounded-[6px] border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenConnect(plat)}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-[7px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-98 border border-blue-600"
-                    >
-                      <Globe2 className="w-3.5 h-3.5 text-white" />
-                      <span>Connect {plat.name}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleConnect(plat)}
+                        disabled={connectingId === plat.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-[6px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer active:scale-98 disabled:opacity-50"
+                      >
+                        {connectingId === plat.id ? (
+                          <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                        ) : (
+                          <Globe2 className="w-3.5 h-3.5 text-white" />
+                        )}
+                        <span>Connect {plat.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCredentialsOpenId(plat.id);
+                          setCredForm({
+                            email: safeConfig[plat.emailKey] || '',
+                            password: safeConfig[plat.passKey] || '',
+                          });
+                        }}
+                        className="px-2.5 py-2 rounded-[6px] border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-xs font-medium transition cursor-pointer"
+                        title="Enter email & password"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -605,10 +611,10 @@ export default function PlatformsPage() {
           })}
         </div>
       ) : (
-        /* List Mode: Compact Horizontal Rows */
-        <div className="flex flex-col gap-2.5">
+        /* List View (Compact Rows) */
+        <div className="space-y-2">
           {platformsList.map((plat, idx) => {
-            const isEnabled = !!config[plat.flag];
+            const isEnabled = !!safeConfig[plat.flag];
             const isConnected = isPlatformConnected(plat);
 
             return (
@@ -626,108 +632,89 @@ export default function PlatformsPage() {
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div
                     title="Drag to reorder"
-                    className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-300 p-0.5 select-none shrink-0"
+                    className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-600 hover:text-slate-500 p-0.5 select-none shrink-0"
                   >
-                    <GripVertical className="w-4 h-4" />
+                    <GripVertical className="w-3.5 h-3.5" />
                   </div>
-
-                  <PlatformLogo id={plat.id} className="w-8 h-8 shrink-0 rounded-[4px]" />
-
+                  <PlatformLogo id={plat.id} className="w-7 h-7 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-none">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                         {plat.name}
                       </h3>
                       <button
                         type="button"
                         onClick={() => handleToggleConnection(plat)}
-                        className="cursor-pointer transition-transform hover:scale-110 active:scale-95 inline-flex items-center"
-                        title={isConnected ? 'Connected & Verified (Click to disconnect)' : 'Not Connected (Click to connect)'}
+                        className="cursor-pointer transition hover:scale-110 active:scale-95 focus:outline-hidden shrink-0"
                       >
                         <ScallopBadge connected={isConnected} className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-[11px] text-slate-400 font-normal truncate hidden md:inline">
-                        — {plat.subtitle}
-                      </span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5 max-w-xl">
-                      {plat.desc}
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 truncate">
+                      {plat.subtitle}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 justify-between sm:justify-end">
-                  {/* iOS Style Toggle Switch */}
-                  <label
-                    className={`relative inline-flex items-center shrink-0 ${
-                      isConnected ? 'cursor-pointer' : 'cursor-not-allowed opacity-40'
-                    }`}
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isEnabled}
+                    disabled={!isConnected}
+                    onClick={() => handleTogglePlatform(plat)}
                     title={
-                      isConnected
-                        ? isEnabled
-                          ? `Disable ${plat.name}`
-                          : `Enable ${plat.name}`
-                        : `Connect ${plat.name} first to enable`
+                      !isConnected
+                        ? `Connect ${plat.name} first`
+                        : isEnabled
+                        ? `Disable ${plat.name}`
+                        : `Enable ${plat.name}`
                     }
-                    onClick={(e) => {
-                      if (!isConnected) {
-                        e.preventDefault();
-                        handleTogglePlatform(plat);
-                      }
-                    }}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ease-in-out cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                      isEnabled ? 'bg-blue-600' : 'bg-slate-200 dark:bg-slate-700'
+                    }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isConnected && isEnabled}
-                      disabled={!isConnected}
-                      onChange={() => isConnected && handleTogglePlatform(plat)}
-                      className="sr-only"
-                    />
-                    <div
-                      className={`w-10 h-5.5 rounded-full transition-colors duration-200 relative shadow-inner ${
-                        isConnected && isEnabled ? 'bg-[#16a34a] !bg-[#16a34a]' : 'bg-slate-300 dark:bg-slate-700'
+                    <span
+                      className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                        isEnabled ? 'translate-x-4.5' : 'translate-x-1'
                       }`}
-                      style={{ backgroundColor: isConnected && isEnabled ? '#16a34a' : undefined }}
-                    >
-                      <div
-                        className={`absolute top-[2px] w-4.5 h-4.5 bg-white rounded-full transition-transform duration-200 shadow-md ${
-                          isConnected && isEnabled ? 'translate-x-[18px]' : 'translate-x-[2px]'
-                        }`}
-                      />
-                    </div>
-                  </label>
+                    />
+                  </button>
 
-                  {/* Buttons with filled colors */}
                   {isConnected ? (
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-emerald-600 text-white text-xs font-bold shadow-xs">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mr-2">
                         <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>Connected</span>
+                        <span>Connected & Verified</span>
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleDisconnect(plat)}
-                        className="px-3 py-1.5 rounded-[6px] bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold shadow-xs transition cursor-pointer"
-                        title="Disconnect this platform"
+                        onClick={() => window.open(plat.loginUrl, '_blank')}
+                        className="p-1.5 rounded-[6px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
+                        title="Open Login Tab"
                       >
-                        Disconnect
+                        <ExternalLink className="w-3.5 h-3.5" />
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleOpenConnect(plat)}
-                        className="p-1.5 rounded-[6px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition cursor-pointer"
-                        title="Re-open Chrome"
+                        onClick={() => handleDisconnect(plat)}
+                        className="px-2.5 py-1 rounded-[6px] border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-rose-600 text-xs font-semibold transition cursor-pointer"
                       >
-                        <RotateCw className="w-3.5 h-3.5" />
+                        Disconnect
                       </button>
                     </div>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleOpenConnect(plat)}
-                      className="px-3.5 py-1.5 rounded-[6px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                      onClick={() => handleConnect(plat)}
+                      disabled={connectingId === plat.id}
+                      className="px-3.5 py-1.5 rounded-[6px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                     >
-                      <Globe2 className="w-3.5 h-3.5 text-white" />
+                      {connectingId === plat.id ? (
+                        <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
+                      ) : (
+                        <Globe2 className="w-3.5 h-3.5 text-white" />
+                      )}
                       <span>Connect</span>
                     </button>
                   )}
@@ -738,131 +725,6 @@ export default function PlatformsPage() {
         </div>
       )}
 
-      {/* Trustworthy, Simple 1-Click Connect Modal */}
-      {activePlat && (
-        <div
-          onClick={() => setActivePlat(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-[16px] border border-slate-200/80 shadow-2xl max-w-md w-full p-6 space-y-5 animate-in zoom-in-95 duration-150"
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <PlatformLogo id={activePlat.id} className="w-12 h-12 rounded-[10px]" />
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                    Connect {activePlat.name}
-                  </h3>
-                  <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium mt-0.5">
-                    <Lock className="w-3.5 h-3.5" />
-                    <span>Private & Local Connection</span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setActivePlat(null)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-700 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Simple Trust-First Instruction Card */}
-            <div className="bg-slate-50 rounded-[12px] p-4 border border-slate-200/70 text-center space-y-2">
-              <div className="w-10 h-10 mx-auto rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div className="text-sm font-bold text-slate-900">
-                Official {activePlat.name} Portal Opened
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
-                Sign in with <strong>Google, OTP, or your regular account</strong> in the open Chrome window.
-              </p>
-            </div>
-
-            {/* Live Status Indicator */}
-            {modalMsg && (
-              <div
-                className={`flex items-start gap-2.5 p-3.5 rounded-[10px] text-xs font-medium border ${
-                  modalMsg.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                    : modalMsg.type === 'info'
-                    ? 'bg-blue-50 text-blue-900 border-blue-200'
-                    : 'bg-rose-50 text-rose-900 border-rose-200'
-                }`}
-              >
-                {modalMsg.type === 'success' ? (
-                  <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5 stroke-[2.5]" />
-                ) : modalMsg.type === 'info' ? (
-                  <Loader2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5 animate-spin" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                )}
-                <div className="leading-relaxed">{modalMsg.text}</div>
-              </div>
-            )}
-
-            {!modalMsg && (
-              <div className="flex items-center justify-center gap-2 py-2 px-3 rounded-[8px] bg-slate-100/80 text-xs text-slate-600 font-medium">
-                <Loader2 className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
-                <span>Auto-detecting sign-in in Chrome window</span>
-              </div>
-            )}
-
-            {/* Primary Action Button */}
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={handleManualVerify}
-                disabled={modalLoading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-[10px] bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition cursor-pointer shadow-sm active:scale-98 disabled:opacity-50"
-              >
-                {modalLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                    <span>Verifying Session</span>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4 text-white stroke-[2.5]" />
-                    <span>I Have Signed In — Complete Setup</span>
-                  </>
-                )}
-              </button>
-
-              <div className="flex items-center justify-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenConnect(activePlat)}
-                  disabled={modalLoading}
-                  className="text-xs text-slate-500 hover:text-slate-800 font-medium flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <RotateCw className="w-3.5 h-3.5" />
-                  Re-open Chrome Window
-                </button>
-              </div>
-            </div>
-
-            {/* Trust & Privacy Guarantee Footer */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-slate-400" />
-                <span>Zero passwords stored / 100% on device</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActivePlat(null)}
-                className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      </div>
   );
 }

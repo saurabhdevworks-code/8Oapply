@@ -353,18 +353,31 @@ Answer directly and concisely in 1-3 sentences maximum (or a number/yes/no if ap
 
 
 def tailor_resume_from_jd(
-    provider: str,
-    api_key: str,
-    model: str,
-    job_title: str,
-    company: str,
-    job_description: str,
-    candidate_profile: Dict[str, Any]
+    provider: str = "",
+    api_key: str = "",
+    model: str = "",
+    job_title: str = "",
+    company: str = "",
+    job_description: str = "",
+    candidate_profile: Optional[Dict[str, Any]] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     Tailors the candidate's resume content to match a specific Job Description (JD).
     Generates targeted summary, aligned skills, impact bullet points, and ATS Markdown.
     """
+    candidate_profile = candidate_profile or {}
+    prov = (provider or candidate_profile.get("ai_provider") or "grok").lower().strip()
+    if not api_key:
+        provider_key_map = {
+            "grok": "grok_api_key",
+            "openai": "openai_api_key",
+            "claude": "claude_api_key",
+            "gemini": "gemini_api_key",
+        }
+        api_key = candidate_profile.get(provider_key_map.get(prov, "grok_api_key"), "")
+    if not model:
+        model = DEFAULT_MODELS.get(prov, "")
     name = candidate_profile.get("name", "Candidate")
     skills = candidate_profile.get("skills", "Full Stack Development, Python, JavaScript, React, Node.js")
     degree = candidate_profile.get("degree", "Bachelor of Technology in Computer Science")

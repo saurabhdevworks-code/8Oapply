@@ -267,6 +267,19 @@ export async function runSchedulerNow() {
   return res.json();
 }
 
+export async function applySelectedJobsNow(jobIds) {
+  const res = await fetch(`${API_BASE}/scheduler/apply-selected-now`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ job_ids: jobIds }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to apply to selected jobs');
+  }
+  return res.json();
+}
+
 export async function testEmailSettings(payload) {
   const res = await fetch(`${API_BASE}/email/test`, {
     method: 'POST',
@@ -334,6 +347,15 @@ export async function bulkDeleteJobs(jobIds) {
     body: JSON.stringify({ job_ids: jobIds }),
   });
   if (!res.ok) throw new Error('Failed to bulk delete jobs');
+  return res.json();
+}
+
+export async function clearAllJobs() {
+  const res = await fetch(`${API_BASE}/jobs/clear`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to clear all jobs');
   return res.json();
 }
 
@@ -546,4 +568,40 @@ export async function testTriggerAlert(payload) {
     throw new Error(errorData.detail || 'Failed to dispatch test trigger alert');
   }
   return res.json();
+}
+
+export async function masterOpenPlatforms() {
+  const res = await fetch(`${API_BASE}/platforms/master-open`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.message || 'Failed to open Master Connect window');
+  }
+  return res.json();
+}
+
+export async function masterSyncPlatforms() {
+  const res = await fetch(`${API_BASE}/platforms/master-sync`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.message || 'Master sync request failed');
+  }
+  return res.json();
+}
+
+
+export async function masterConnectWithCredentials(email, password, platforms = null) {
+  const res = await fetch(`${API_BASE}/platforms/master-credentials`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ email, password, platforms }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || data.message || 'Failed to connect platforms with credentials');
+  return data;
 }

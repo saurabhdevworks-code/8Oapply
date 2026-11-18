@@ -4,6 +4,7 @@ import { useBot } from '../../context/BotContext';
 import {
   fetchSchedulerStatus,
   runSchedulerNow,
+  applySelectedJobsNow,
   testEmailSettings,
 } from '../../services/api';
 import {
@@ -35,6 +36,7 @@ import ConnectGmailModal from '../../components/common/ConnectGmailModal';
 import ScheduleWatchModal from '../../components/common/ScheduleWatchModal';
 import CalendarModal from '../../components/common/CalendarModal';
 import MiniCalendar from '../../components/common/MiniCalendar';
+import ScheduledJobSelectModal from '../../components/common/ScheduledJobSelectModal';
 import ScallopBadge from '../../components/common/ScallopBadge';
 
 const TIME_PRESETS = [
@@ -78,6 +80,7 @@ export default function SchedulerPage() {
   const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [isJobSelectModalOpen, setIsJobSelectModalOpen] = useState(false);
   const [editingWatchTime, setEditingWatchTime] = useState(null);
   const [editingTimeKey, setEditingTimeKey] = useState(null);
   const [editingTimeValue, setEditingTimeValue] = useState('');
@@ -85,6 +88,27 @@ export default function SchedulerPage() {
   const [showAddCustomTime, setShowAddCustomTime] = useState(false);
   const [editingTaskNameKey, setEditingTaskNameKey] = useState(null);
   const [editingTaskNameValue, setEditingTaskNameValue] = useState('');
+
+  const handleSaveJobSelection = async (jobIds) => {
+    const updatedConfig = {
+      ...config,
+      scheduler_action_mode: 'selected_jobs',
+      scheduled_selected_jobs: jobIds,
+    };
+    updateConfigValue('scheduler_action_mode', 'selected_jobs');
+    updateConfigValue('scheduled_selected_jobs', jobIds);
+    await handleSaveConfig(updatedConfig, true);
+    showToast(`Saved ${jobIds.length} jobs for scheduled apply!`, 'success');
+  };
+
+  const handleApplySelectedJobsNow = async (jobIds) => {
+    try {
+      await applySelectedJobsNow(jobIds);
+      showToast(`Started application for ${jobIds.length} selected jobs!`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to apply to selected jobs', 'error');
+    }
+  };
 
   const parseTimeTo24h = (str) => {
     if (!str) return null;
@@ -917,6 +941,104 @@ export default function SchedulerPage() {
             </div>
           </div>
 
+          {/* 2-Way Scheduler Execution Modes */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 mt-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                  Scheduler Execution Mode
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  Choose how the scheduler operates when triggered at your set time
+                </span>
+              </div>
+              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full border bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700">
+                {config.scheduler_action_mode === 'selected_jobs' ? 'Mode 2: Apply Selected' : 'Mode 1: Fetch & Apply'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Mode 1: Fetch & Auto-Apply */}
+              <div
+                onClick={async () => {
+                  updateConfigValue('scheduler_action_mode', 'fetch_and_apply');
+                  await handleSaveConfig({ ...config, scheduler_action_mode: 'fetch_and_apply' }, true);
+                  showToast('Mode 1 active: Set time -> Fetch jobs + Auto-apply', 'info');
+                }}
+                className={`p-3 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 ${
+                  (config.scheduler_action_mode || 'fetch_and_apply') === 'fetch_and_apply'
+                    ? 'border-blue-500/80 bg-blue-50/50 dark:bg-blue-500/10 shadow-2xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                      1
+                    </div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      Fetch & Auto-Apply
+                    </span>
+                  </div>
+                  {(config.scheduler_action_mode || 'fetch_and_apply') === 'fetch_and_apply' && (
+                    <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[2.5]" />
+                  )}
+                </div>
+                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
+                  Set time &rarr; Fetch fresh matching jobs from enabled platforms + Auto-apply immediately.
+                </p>
+              </div>
+
+              {/* Mode 2: Apply Selected Jobs */}
+              <div
+                onClick={async () => {
+                  updateConfigValue('scheduler_action_mode', 'selected_jobs');
+                  await handleSaveConfig({ ...config, scheduler_action_mode: 'selected_jobs' }, true);
+                  setIsJobSelectModalOpen(true);
+                }}
+                className={`p-3 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 ${
+                  config.scheduler_action_mode === 'selected_jobs'
+                    ? 'border-emerald-500/80 bg-emerald-50/50 dark:bg-emerald-500/10 shadow-2xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                      2
+                    </div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                      Apply Selected Jobs
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                      {(config.scheduled_selected_jobs || []).length} queued
+                    </span>
+                    {config.scheduler_action_mode === 'selected_jobs' && (
+                      <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[2.5]" />
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
+                  Set time &rarr; Select unapplied jobs (filtered by Date & Platform) &rarr; Apply at scheduled time.
+                </p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateConfigValue('scheduler_action_mode', 'selected_jobs');
+                    setIsJobSelectModalOpen(true);
+                  }}
+                  className="mt-1 text-[11px] font-bold py-1 px-2.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Select / Filter Jobs ({(config.scheduled_selected_jobs || []).length})</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 4-Stage Automated Pipeline Visualizer & Stage Controls */}
           <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2 mt-3">
             <div className="flex items-center justify-between">
@@ -1117,23 +1239,40 @@ export default function SchedulerPage() {
                         </button>
                       </div>
 
-                      {/* Autonomous Pipeline Actions — ONLY show what is active/in use */}
+                      {/* Execution Mode & Pipeline Actions */}
                       <div className="flex items-center gap-2 shrink-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {isDiscoveryOn && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">
-                              ✓ 1. Job Discovery
-                            </span>
-                          )}
-                          {isApplyOn && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
-                              ✓ 2. Auto-Apply
-                            </span>
-                          )}
-                          {!isDiscoveryOn && !isApplyOn && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10px] text-slate-400 border border-dashed border-slate-300 dark:border-slate-700">
-                              No Actions Enabled
-                            </span>
+                          {config.scheduler_action_mode === 'selected_jobs' ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
+                                <Layers className="w-3 h-3" />
+                                Mode 2: {(config.scheduled_selected_jobs || []).length} Jobs Queued
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setIsJobSelectModalOpen(true)}
+                                className="text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                              >
+                                Edit Queue
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">
+                                <Sparkles className="w-3 h-3" />
+                                Mode 1: Fetch & Apply
+                              </span>
+                              {isDiscoveryOn && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  Discovery
+                                </span>
+                              )}
+                              {isApplyOn && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  Auto-Apply
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
 
@@ -1191,6 +1330,15 @@ export default function SchedulerPage() {
         onClose={() => setIsCalendarModalOpen(false)}
         selectedDate={config.scheduler_date || new Date().toISOString().split('T')[0]}
         onSelectDate={handleCalendarDateSelect}
+      />
+
+      {/* Mode 2: Scheduled Unapplied Job Selection Modal (with Date & Platform filters) */}
+      <ScheduledJobSelectModal
+        isOpen={isJobSelectModalOpen}
+        onClose={() => setIsJobSelectModalOpen(false)}
+        selectedJobIds={config.scheduled_selected_jobs || []}
+        onSaveSelection={handleSaveJobSelection}
+        onApplyNow={handleApplySelectedJobsNow}
       />
     </div>
   );

@@ -1,3 +1,5 @@
+import shutil
+from filelock import FileLock
 import os
 import json
 import csv
@@ -260,12 +262,36 @@ def sync_applied_jobs_with_inbox_and_lifecycle() -> Dict[str, Any]:
 
             rows.append(r)
 
-    # Save back to CSV
-    with open(APPLIED_FILE, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for r in rows:
-            writer.writerow({k: r.get(k, "") for k in fieldnames})
+    # Save back to CSV with process-safe lock
+    with FileLock(str(APPLIED_FILE) + ".lock", timeout=10):
+        with open(APPLIED_FILE, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({k: r.get(k, "") for k in fieldnames})
+        try:
+            user1_csv = BASE_DIR / "data" / "users" / "1" / "applied_jobs.csv"
+            if user1_csv.exists() and user1_csv != APPLIED_FILE:
+                user1_rows = []
+                with open(user1_csv, "r", encoding="utf-8", errors="ignore") as uf:
+                    u_reader = csv.DictReader(uf)
+                    status_by_jid = {r.get("job_id"): r.get("status") for r in rows if r.get("job_id")}
+                    status_by_url = {r.get("url"): r.get("status") for r in rows if r.get("url")}
+                    for ur in u_reader:
+                        ujid = (ur.get("job_id") or "").strip()
+                        ujurl = (ur.get("url") or "").strip()
+                        if ujid in status_by_jid:
+                            ur["status"] = status_by_jid[ujid]
+                        elif ujurl in status_by_url:
+                            ur["status"] = status_by_url[ujurl]
+                        user1_rows.append(ur)
+                with open(user1_csv, "w", encoding="utf-8", newline="") as uf:
+                    u_writer = csv.DictWriter(uf, fieldnames=fieldnames)
+                    u_writer.writeheader()
+                    for ur in user1_rows:
+                        u_writer.writerow({k: ur.get(k, "") for k in fieldnames})
+        except Exception:
+            pass
 
     # Keep responses file in sync
     save_responses(responses)

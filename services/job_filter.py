@@ -242,7 +242,10 @@ def is_job_match(
                 if tl == "gurgaon" and "gurugram" in loc_lower:
                     loc_matched = True
                     break
-                if tl in ["delhi", "noida", "gurgaon"] and "ncr" in loc_lower:
+                if tl in ["delhi", "noida", "gurgaon", "faridabad", "ghaziabad"] and any(n in loc_lower for n in ["ncr", "national capital region"]):
+                    loc_matched = True
+                    break
+                if tl == "noida" and any(u in loc_lower for u in ["uttar pradesh", "up"]):
                     loc_matched = True
                     break
 

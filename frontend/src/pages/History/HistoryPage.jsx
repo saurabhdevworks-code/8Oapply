@@ -8,12 +8,13 @@ import {
   applyJobLive,
   deleteJob,
   bulkDeleteJobs,
+  clearAllJobs,
   bulkUpdateJobStatus,
 } from '../../services/api';
 import { useBot } from '../../context/BotContext';
 import PlatformLogo from '../../components/common/PlatformLogo';
 import ConnectGmailModal from '../../components/common/ConnectGmailModal';
-import ScheduleWatchModal from '../../components/common/ScheduleWatchModal';
+import ScheduleConfigModal from '../../components/common/ScheduleConfigModal';
 import {
   FileSpreadsheet,
   Search,
@@ -40,7 +41,7 @@ import {
 } from 'lucide-react';
 
 export default function HistoryPage() {
-  const { status, handleStart, handleStop, showToast, config, checkProfileCompleteness } = useBot();
+  const { status, handleStart, handleStop, showToast, config, checkProfileCompleteness, reloadStatus } = useBot();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncingStatus, setSyncingStatus] = useState(false);
@@ -194,8 +195,9 @@ export default function HistoryPage() {
     try {
       await deleteJob(jobId);
       setSelectedIds((prev) => prev.filter((id) => id !== jobId));
-      if (showToast) showToast('Job deleted from log', 'info');
+      if (showToast) showToast('Job deleted from application records', 'info');
       await loadJobs();
+      if (reloadStatus) reloadStatus();
     } catch (err) {
       if (showToast) showToast('Failed to delete job', 'error');
     } finally {
@@ -211,6 +213,7 @@ export default function HistoryPage() {
       if (showToast) showToast(`Marked ${targetIds.length} unapplied job(s) as Applied!`, 'success');
       setSelectedIds([]);
       await loadJobs();
+      if (reloadStatus) reloadStatus();
     } catch (err) {
       if (showToast) showToast('Failed to update selected jobs', 'error');
     } finally {
@@ -223,9 +226,10 @@ export default function HistoryPage() {
     setActionLoading(true);
     try {
       await bulkDeleteJobs(selectedIds);
-      if (showToast) showToast(`Deleted ${selectedIds.length} job(s)`, 'info');
+      if (showToast) showToast(`Deleted ${selectedIds.length} job record(s)`, 'info');
       setSelectedIds([]);
       await loadJobs();
+      if (reloadStatus) reloadStatus();
     } catch (err) {
       if (showToast) showToast('Failed to delete selected jobs', 'error');
     } finally {
@@ -234,12 +238,13 @@ export default function HistoryPage() {
   };
 
   const handleSingleDelete = (job) => {
+    const targetKey = job.job_id || job.url;
     setConfirmModal({
       isOpen: true,
       type: 'delete',
       title: 'Confirm Delete',
       message: `Do you want to delete "${job.job_title || 'this job'}" from application records?`,
-      onConfirm: () => executeSingleDelete(job.job_id),
+      onConfirm: () => executeSingleDelete(targetKey),
     });
   };
 
@@ -856,8 +861,8 @@ export default function HistoryPage() {
         }}
       />
 
-      {/* Schedule Watch Modal */}
-      <ScheduleWatchModal
+      {/* Schedule Config Modal (Daily Routine & Execution Schedule) */}
+      <ScheduleConfigModal
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
       />
