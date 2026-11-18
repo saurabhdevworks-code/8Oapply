@@ -221,14 +221,17 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
   };
 
   return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
-    >
+    <>
       <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden max-h-[92vh]"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
       >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden max-h-[92vh]"
+        >
         {/* Header matching uploaded image */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -612,34 +615,35 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
           </div>
         </div>
       </div>
-
-      {/* Embedded Calendar Modal */}
-      <CalendarModal
-        isOpen={isCalendarOpen}
-        onClose={() => setIsCalendarOpen(false)}
-        selectedDate={selectedDateStr}
-        onSelectDate={handleCalendarDateSelect}
-      />
-
-      {/* Embedded Clock Dial Watch Modal */}
-      <ScheduleWatchModal
-        isOpen={isWatchModalOpen}
-        onClose={() => {
-          setIsWatchModalOpen(false);
-          setEditingWatchTime(null);
-        }}
-        initialTime={editingWatchTime}
-        onSaveTime={handleSaveFromWatchModal}
-      />
-
-      {/* Embedded Mode 2 Unapplied Job Select Modal */}
-      <ScheduledJobSelectModal
-        isOpen={isJobSelectModalOpen}
-        onClose={() => setIsJobSelectModalOpen(false)}
-        selectedJobIds={config.scheduled_selected_jobs || []}
-        onSaveSelection={handleSaveJobSelection}
-        onApplyNow={handleApplySelectedJobsNow}
-      />
     </div>
-  );
+
+    {/* Embedded Calendar Modal */}
+    <CalendarModal
+      isOpen={isCalendarOpen}
+      onClose={() => setIsCalendarOpen(false)}
+      selectedDate={selectedDateStr}
+      onSelectDate={handleCalendarDateSelect}
+    />
+
+    {/* Embedded Clock Dial Watch Modal */}
+    <ScheduleWatchModal
+      isOpen={isWatchModalOpen}
+      onClose={() => {
+        setIsWatchModalOpen(false);
+        setEditingWatchTime(null);
+      }}
+      initialTime={editingWatchTime}
+      onSaveTime={handleSaveFromWatchModal}
+    />
+
+    {/* Embedded Mode 2 Unapplied Job Select Modal */}
+    <ScheduledJobSelectModal
+      isOpen={isJobSelectModalOpen}
+      onClose={() => setIsJobSelectModalOpen(false)}
+      selectedJobIds={config.scheduled_selected_jobs || []}
+      onSaveSelection={handleSaveJobSelection}
+      onApplyNow={handleApplySelectedJobsNow}
+    />
+  </>
+);
 }
