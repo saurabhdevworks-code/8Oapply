@@ -32,6 +32,8 @@ import json
 import pickle
 from datetime import datetime
 from pathlib import Path
+import re
+import hashlib
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1961,9 +1963,18 @@ def indeed_bot():
         log.info(f"🔍 Indeed: Collecting active jobs for [{target_role}] in [{target_loc}]...")
         stealth_jobs = fetch_indeed_jobs_stealth(target_role, target_loc, max_jobs=max_to_collect)
 
-        # If first pass returned few jobs, fetch related technical role in same location
-        if len(stealth_jobs) < 15 and "backend" in target_role.lower():
-            more_jobs = fetch_indeed_jobs_stealth("Software Engineer", target_loc, max_jobs=max_to_collect - len(stealth_jobs))
+        # Multi-query expansion across related tech roles to guarantee fresh, unapplied jobs
+        related_roles = [
+            f"Python {target_role}",
+            f"Node js {target_role}",
+            "Software Engineer",
+            "Backend Engineer",
+            "Full Stack Developer"
+        ]
+        for rr in related_roles:
+            if len(stealth_jobs) >= max_to_collect:
+                break
+            more_jobs = fetch_indeed_jobs_stealth(rr, target_loc, max_jobs=max_to_collect - len(stealth_jobs))
             for mj in more_jobs:
                 if not any(sj.get("job_id") == mj.get("job_id") for sj in stealth_jobs):
                     stealth_jobs.append(mj)
@@ -2710,6 +2721,97 @@ def wellfound_bot():
     return applied
 
 
+
+FORBIDDEN_PLATFORM_DOMAINS = [
+    "internshala.com", "naukri.com", "indeed.com", "linkedin.com",
+    "shine.com", "foundit.in", "glassdoor.com", "glassdoor.co.in",
+    "timesjobs.com", "wellfound.com", "instahyre.com", "hirist.com",
+    "unstop.com", "cuvette.tech", "freshersworld.com", "apna.co", "jobhai.com"
+]
+
+def is_forbidden_for_others(url: str) -> bool:
+    """Returns True if the URL belongs to a 3rd-party job platform instead of a direct company career page."""
+    if not url:
+        return True
+    u = url.lower()
+    return any(domain in u for domain in FORBIDDEN_PLATFORM_DOMAINS)
+
+def fetch_others_jobs_fallback(title: str, loc: str, max_jobs: int = 25) -> list:
+    """
+    Direct Company Career Portals and ATS fallback (Lever, Greenhouse, Workday, SmartRecruiters, Ashby).
+    STRICT USER RULE: Only authentic direct company career pages on websites.
+    ALL 3rd-party aggregator platforms (Internshala, Naukri, Indeed, LinkedIn, etc.) are strictly excluded.
+    """
+    import urllib.request
+    import urllib.parse
+    import re
+    import hashlib
+
+    results = []
+    seen = set()
+
+    query = f'site:lever.co OR site:greenhouse.io OR site:myworkdayjobs.com OR site:smartrecruiters.com OR site:ashbyhq.com "{title}" "{loc}" India'
+    search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+    req = urllib.request.Request(
+        search_url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as res:
+            html = res.read().decode("utf-8", errors="ignore")
+            matches = re.findall(r'uddg=([^&"\']+)', html)
+            for raw_link in matches:
+                if len(results) >= max_jobs:
+                    break
+                link = urllib.parse.unquote(raw_link)
+                if is_forbidden_for_others(link):
+                    continue
+
+                if not any(k in link.lower() for k in ["lever.co", "greenhouse.io", "myworkdayjobs.com", "smartrecruiters.com", "ashbyhq.com", "workable.com"]):
+                    continue
+
+                clean_url = link.split("?")[0].split("#")[0].rstrip("/")
+                if clean_url in seen:
+                    continue
+                seen.add(clean_url)
+
+                company = "Direct Employer"
+                if "lever.co/" in clean_url:
+                    parts = clean_url.split("lever.co/")
+                    if len(parts) > 1:
+                        company = parts[1].split("/")[0].replace("-", " ").title()
+                elif "greenhouse.io/" in clean_url:
+                    parts = clean_url.split("greenhouse.io/")
+                    if len(parts) > 1:
+                        company = parts[1].split("/")[0].replace("-", " ").title()
+                elif "myworkdayjobs.com" in clean_url:
+                    parts = clean_url.split("//")
+                    if len(parts) > 1:
+                        company = parts[1].split(".")[0].replace("-", " ").title()
+                elif "smartrecruiters.com/" in clean_url:
+                    parts = clean_url.split("smartrecruiters.com/")
+                    if len(parts) > 1:
+                        company = parts[1].split("/")[0].replace("-", " ").title()
+
+                slug = clean_url.split("/")[-1].replace("-", " ").replace("_", " ").title()
+                job_t = slug if len(slug) > 4 else title
+
+                jid = f"others-{hashlib.md5(clean_url.encode()).hexdigest()[:12]}"
+                results.append({
+                    "title": job_t,
+                    "company": company,
+                    "location": loc,
+                    "job_id": jid,
+                    "url": clean_url,
+                    "description": f"Role: {job_t} at {company}. Direct career application.",
+                    "platform": "Others"
+                })
+    except Exception as e:
+        log.warning(f"Direct ATS career portal fallback notice: {e}")
+
+    return results
+
 def others_bot():
     """
     Others (Google & Direct Career Portals):
@@ -2847,11 +2949,26 @@ def others_bot():
             except Exception:
                 pass
 
-        log.info(f"Discovered {len(found_links)} opportunities (Career Portals & LinkedIn Posts) from Google")
+        # If Google returned 0 (rate-limited / CAPTCHA), seamlessly use direct career portal collector
+        if not found_links:
+            log.info("🌐 Others: Direct career portal discovery active for Noida tech positions...")
+            fallback_jobs = fetch_others_jobs_fallback(title, loc, max_jobs=CONFIG.get("max_per_platform", 25))
+            for fj in fallback_jobs:
+                try:
+                    from services.job_filter import is_job_match, clean_job_title
+                    is_m, _ = is_job_match(clean_job_title(fj["title"]), loc=fj.get("location"), company=fj.get("company"), config=CONFIG)
+                    if is_m:
+                        found_links.append((fj["url"], fj["title"], fj["company"], fj["job_id"], "Others"))
+                except Exception:
+                    found_links.append((fj["url"], fj["title"], fj["company"], fj["job_id"], "Others"))
+
+        log.info(f"Discovered {len(found_links)} opportunities (Career Portals & Direct Openings) for Others")
 
         # Fast Collection phase: Record all newly discovered jobs immediately
         new_jobs = []
         for clean_url, job_title, company, job_id, plat in found_links:
+            if plat == "Others" and is_forbidden_for_others(clean_url):
+                continue
             if job_id not in applied_jobs:
                 save_applied(plat, job_title, company, job_id, clean_url, status="Not Applied")
                 collected += 1
@@ -2870,8 +2987,6 @@ def others_bot():
                     if res.get("success"):
                         applied += 1
                         save_applied(plat, job_title, company, job_id, clean_url, status="Applied")
-                except Exception as e:
-                    log.error(f"Live apply error: {e}")
                 except Exception as e:
                     log.error(f"Others live apply error: {e}")
 
@@ -2949,10 +3064,10 @@ def main():
             active_platforms = [(name, fn) for name, (fn, flag) in PLATFORM_MAP.items() if CONFIG.get(flag)]
 
             # Respect user's customized platform execution priority order
-            user_order = [str(p).strip().lower() for p in (CONFIG.get("platform_priority_order") or CONFIG.get("platform_priority") or [])]
+            user_order = [str(p).strip().lower().replace("use_", "") for p in (CONFIG.get("platform_priority_order") or CONFIG.get("platform_priority") or [])]
             if user_order:
                 def get_plat_rank(item):
-                    name = item[0].lower()
+                    name = item[0].lower().replace("use_", "")
                     return user_order.index(name) if name in user_order else 999
                 active_platforms.sort(key=get_plat_rank)
 
@@ -3016,6 +3131,8 @@ def apply_to_job_live(url: str, platform: str = "", title: str = "", company: st
         platform_clean = "Indeed"
     elif "linkedin.com" in url.lower():
         platform_clean = "LinkedIn"
+    elif "internshala.com" in url.lower():
+        platform_clean = "Internshala"
 
     log.info(f"⚡ Live Apply triggered for: {title} @ {company} ({platform_clean})")
     log.info(f"🔗 URL: {url}")
@@ -3371,6 +3488,22 @@ def apply_to_job_live(url: str, platform: str = "", title: str = "", company: st
                         break
                 except Exception:
                     pass
+
+            if not submitted:
+                cur_u = driver.current_url.lower()
+                if "login" in cur_u or "signin" in cur_u or "auth" in cur_u or "internshala.com" in cur_u:
+                    log.warning(f"⚠️ Application blocked on {cur_u}: login required.")
+                    return {
+                        "success": False,
+                        "status": "not_logged_in",
+                        "message": f"Application blocked: {company} requires account login to apply."
+                    }
+                log.warning(f"⚠️ Application on {company} could not confirm submission.")
+                return {
+                    "success": False,
+                    "status": "not_submitted",
+                    "message": f"Form was opened but submission was not confirmed."
+                }
 
             save_applied("Others", title, company, job_id, url, status="Applied")
             return {

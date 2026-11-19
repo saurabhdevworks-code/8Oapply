@@ -78,22 +78,22 @@ export default function Sidebar() {
               }}
             />
 
-            {/* Inner Dark Card */}
-            <div className="relative rounded-[5px] bg-[#0c1322] p-3 z-10">
+            {/* Inner Theme-Adaptive Card */}
+            <div className="relative rounded-[5px] bg-white dark:bg-[#0c1322] p-3 z-10 transition-colors">
               <div className="flex items-center justify-between gap-2.5">
-                {/* Left Area: Status, Progress text and /150 */}
+                {/* Left Area: Status, Progress text and combos */}
                 <div className="flex-1 min-w-0">
-                  {/* Top: Runner Active (Dot removed) */}
-                  <h4 className="text-[13px] font-bold text-white tracking-tight">
+                  {/* Top: Runner Active */}
+                  <h4 className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight">
                     Runner Active
                   </h4>
 
                   {/* Middle row: Progress (%) on left, combo/collection counter on right */}
                   <div className="flex items-center justify-between mt-1.5 pr-1">
-                    <span className="text-[11px] text-slate-400 font-medium">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                       Progress ({status.progress?.percent ?? 0}%)
                     </span>
-                    <span className="text-[11px] text-slate-400 font-mono font-medium" title="Search Targets: (Job Titles × Locations)">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium" title="Search Targets: (Job Titles × Locations)">
                       {(() => {
                         const total =
                           status.progress?.combo_total > 0
@@ -108,9 +108,9 @@ export default function Sidebar() {
                   </div>
 
                   {/* Bottom: Progress Bar */}
-                  <div className="mt-1.5 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+                  <div className="mt-1.5 h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-emerald-400 transition-all duration-500 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
+                      className="h-full rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                       style={{
                         width: `${Math.min(100, Math.max(0, status.progress?.percent || 0))}%`,
                       }}

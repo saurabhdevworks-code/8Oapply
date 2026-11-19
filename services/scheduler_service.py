@@ -194,13 +194,13 @@ def execute_scheduled_pipeline(config: Dict[str, Any], trigger_bot_runner_fn=Non
 
     # ── MODE 1: Autonomous Fetch & Auto-Apply ───────────────────────
     pipeline_mode = (config.get("pipeline_mode") or "").strip().lower()
-    if pipeline_mode == "collect_only":
+    if action_mode in ["collect_only", "discovery_only"] or pipeline_mode == "collect_only":
         do_discovery = True
         do_apply = False
-    elif pipeline_mode == "apply_only":
+    elif action_mode in ["apply_only"] or pipeline_mode == "apply_only":
         do_discovery = False
         do_apply = True
-    elif pipeline_mode in ["collect_and_apply", "both"]:
+    elif pipeline_mode in ["collect_and_apply", "both"] or action_mode in ["fetch_and_apply", "both"]:
         do_discovery = True
         do_apply = True
     else:
@@ -256,6 +256,23 @@ def execute_scheduled_pipeline(config: Dict[str, Any], trigger_bot_runner_fn=Non
                         last_run_status = step_description
             except Exception as e:
                 print(f"Scheduler trigger bot runner error: {e}")
+    elif do_discovery:
+        # Collect-only mode: Run bot runner to discover & collect jobs without auto-applying
+        current_step = 2
+        step_description = "Step 2/4: Auto-Apply Skipped (Discovery Only Mode)"
+        last_run_status = step_description
+        if trigger_bot_runner_fn:
+            try:
+                trigger_bot_runner_fn()
+                if is_bot_running_fn:
+                    time.sleep(5)
+                    wait_start = time.time()
+                    while is_bot_running_fn() and time.time() - wait_start < 7200:
+                        time.sleep(10)
+                        step_description = f"Step 2/4: Collecting jobs in progress ({int((time.time() - wait_start)//60)}m elapsed)"
+                        last_run_status = step_description
+            except Exception as e:
+                print(f"Scheduler trigger collector error: {e}")
     else:
         current_step = 2
         step_description = "Step 2/4: Auto-Apply Skipped (Per User Choice)"
@@ -328,59 +345,115 @@ def scheduler_worker(get_config_fn, trigger_bot_runner_fn, is_bot_running_fn=Non
                 now = datetime.now()
                 current_hm = now.strftime("%H:%M")
                 current_ymd = now.strftime("%Y-%m-%d")
-                scheduled_times = config.get("scheduled_times", ["09:30", "17:00"])
-                scheduled_days = config.get("scheduler_days", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
-                scheduler_mode = config.get("scheduler_mode", "everyday")
-                scheduler_date = config.get("scheduler_date", "")
                 current_day = now.strftime("%a").lower()[:3]
+                schedules_list = config.get("schedules")
 
-                # Normalize scheduled times to standard HH:MM
-                norm_scheduled = [normalize_time(t) for t in scheduled_times]
+                # Support multiple concurrent schedules if config has a schedules array
+                if schedules_list and isinstance(schedules_list, list) and len(schedules_list) > 0:
+                    for sched in schedules_list:
+                        if sched.get("enabled") is False:
+                            continue
+                        sched_time = normalize_time(sched.get("time", ""))
+                        if not sched_time or sched_time != current_hm:
+                            continue
 
-                # Check date match for onetime mode
-                date_matches = True
-                if scheduler_mode == "onetime":
-                    if scheduler_date:
-                        # If date is today, match! If date was in the past (e.g. yesterday), auto-match today so user's schedule executes
-                        date_matches = (scheduler_date <= current_ymd)
-                    else:
-                        date_matches = True
+                        sched_freq = sched.get("frequency") or sched.get("scheduler_mode") or "everyday"
+                        sched_days = [str(d).lower()[:3] for d in sched.get("days", [])]
+                        sched_date = sched.get("date") or sched.get("scheduler_date") or ""
+                        sched_action = sched.get("action_mode") or sched.get("scheduler_action_mode") or "fetch_and_apply"
+                        sched_name = sched.get("name") or "Scheduled Pipeline"
 
-                # Check cadence mode matching
-                if scheduler_mode == "weekend":
-                    day_matches = (current_day in ["sat", "sun"])
-                elif scheduler_mode in ["weekly", "weekdays"]:
-                    if scheduled_days:
-                        day_matches = (current_day in [d.lower()[:3] for d in scheduled_days])
-                    else:
-                        day_matches = (current_day in ["mon", "tue", "wed", "thu", "fri"])
-                elif scheduler_mode == "onetime":
-                    day_matches = True
-                else:  # everyday
-                    day_matches = (not scheduled_days) or (current_day in [d.lower()[:3] for d in scheduled_days])
+                        # Date check for one-time
+                        d_match = True
+                        if sched_freq in ["onetime", "one_time"]:
+                            if sched_date:
+                                d_match = (sched_date <= current_ymd)
 
-                # Check time match
-                time_matches = (current_hm in norm_scheduled)
+                        # Cadence check
+                        day_match = True
+                        if sched_freq in ["weekly", "weekdays"]:
+                            if sched_days:
+                                day_match = (current_day in sched_days)
+                            else:
+                                day_match = (current_day in ["mon", "tue", "wed", "thu", "fri"])
+                        elif sched_freq in ["custom", "days"] and sched_days:
+                            day_match = (current_day in sched_days)
+                        elif sched_freq in ["onetime", "one_time"]:
+                            day_match = True
+                        else:  # everyday
+                            day_match = (not sched_days) or (current_day in sched_days)
 
-                if date_matches and day_matches and time_matches and current_hm != last_minute_checked:
-                    last_minute_checked = current_hm
-                    print(f"⏰ Scheduler triggered pipeline run at {current_hm} ({scheduler_mode})")
-                    # Run in separate thread so worker loop does not stall
-                    threading.Thread(
-                        target=execute_scheduled_pipeline,
-                        args=(config, trigger_bot_runner_fn, is_bot_running_fn),
-                        daemon=True,
-                        name="ScheduledPipelineRun"
-                    ).start()
+                        trigger_key = f"{sched.get('id', sched_name)}_{current_hm}"
+                        if d_match and day_match and trigger_key != last_minute_checked:
+                            last_minute_checked = trigger_key
+                            print(f"⏰ Scheduler triggered routine '{sched_name}' at {current_hm} ({sched_action})")
+                            sched_cfg = dict(config)
+                            sched_cfg["scheduler_action_mode"] = sched_action
+                            sched_cfg["schedule_name"] = sched_name
+                            if sched.get("selected_jobs"):
+                                sched_cfg["scheduled_selected_jobs"] = sched.get("selected_jobs")
 
-                    # If onetime execution, auto-pause scheduler after run
+                            threading.Thread(
+                                target=execute_scheduled_pipeline,
+                                args=(sched_cfg, trigger_bot_runner_fn, is_bot_running_fn),
+                                daemon=True,
+                                name=f"ScheduledPipelineRun_{sched.get('id', 'item')}"
+                            ).start()
+
+                            if sched_freq in ["onetime", "one_time"]:
+                                try:
+                                    sched["enabled"] = False
+                                    from server import save_current_config
+                                    save_current_config(config)
+                                except Exception as e:
+                                    print(f"Failed to auto-pause onetime schedule routine: {e}")
+
+                else:
+                    # Legacy fallback single schedule handler
+                    scheduled_times = config.get("scheduled_times", [])
+                    scheduled_days = config.get("scheduler_days", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
+                    scheduler_mode = config.get("scheduler_mode", "everyday")
+                    scheduler_date = config.get("scheduler_date", "")
+
+                    norm_scheduled = [normalize_time(t) for t in scheduled_times if t]
+                    date_matches = True
                     if scheduler_mode == "onetime":
-                        try:
-                            config["scheduler_enabled"] = False
-                            from server import save_current_config
-                            save_current_config(config)
-                        except Exception as e:
-                            print(f"Failed to auto-pause onetime scheduler: {e}")
+                        if scheduler_date:
+                            date_matches = (scheduler_date <= current_ymd)
+                        else:
+                            date_matches = True
+
+                    if scheduler_mode == "weekend":
+                        day_matches = (current_day in ["sat", "sun"])
+                    elif scheduler_mode in ["weekly", "weekdays"]:
+                        if scheduled_days:
+                            day_matches = (current_day in [d.lower()[:3] for d in scheduled_days])
+                        else:
+                            day_matches = (current_day in ["mon", "tue", "wed", "thu", "fri"])
+                    elif scheduler_mode == "onetime":
+                        day_matches = True
+                    else:  # everyday
+                        day_matches = (not scheduled_days) or (current_day in [d.lower()[:3] for d in scheduled_days])
+
+                    time_matches = (current_hm in norm_scheduled) if norm_scheduled else False
+
+                    if date_matches and day_matches and time_matches and current_hm != last_minute_checked:
+                        last_minute_checked = current_hm
+                        print(f"⏰ Scheduler triggered pipeline run at {current_hm} ({scheduler_mode})")
+                        threading.Thread(
+                            target=execute_scheduled_pipeline,
+                            args=(config, trigger_bot_runner_fn, is_bot_running_fn),
+                            daemon=True,
+                            name="ScheduledPipelineRun"
+                        ).start()
+
+                        if scheduler_mode == "onetime":
+                            try:
+                                config["scheduler_enabled"] = False
+                                from server import save_current_config
+                                save_current_config(config)
+                            except Exception as e:
+                                print(f"Failed to auto-pause onetime scheduler: {e}")
 
                 # Periodic background inbox check every 3 minutes (180s) for +ve responses
                 if time.time() - last_inbox_check_time > 180:

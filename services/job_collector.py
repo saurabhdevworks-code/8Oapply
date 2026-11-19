@@ -26,6 +26,13 @@ APPLIED_FILE = BASE_DIR / "applied_jobs.csv"
 CSV_LOCK_FILE = BASE_DIR / "applied_jobs.csv.lock"
 
 
+FORBIDDEN_PLATFORMS = [
+    "internshala.com", "naukri.com", "indeed.com", "linkedin.com",
+    "shine.com", "foundit.in", "glassdoor.com", "glassdoor.co.in",
+    "timesjobs.com", "wellfound.com", "instahyre.com", "hirist.com",
+    "unstop.com", "cuvette.tech", "freshersworld.com", "apna.co", "jobhai.com"
+]
+
 def load_previously_applied_ids() -> set:
     applied = set()
     if APPLIED_FILE.exists():
@@ -98,6 +105,10 @@ def append_to_applied_csv(new_jobs: List[Dict[str, Any]]) -> int:
                 platform = j.get("source", "Others")
                 if platform == "Direct ATS":
                     platform = "Others"
+
+                url_str = (j.get("url") or "").lower()
+                if platform == "Others" and any(p in url_str for p in FORBIDDEN_PLATFORMS):
+                    continue
 
                 writer.writerow([
                     now_str,

@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useBot } from '../../context/BotContext';
 import {
   fetchSchedulerStatus,
   runSchedulerNow,
-  applySelectedJobsNow,
   testEmailSettings,
+  applySelectedJobsNow,
 } from '../../services/api';
 import {
   Clock,
@@ -31,20 +30,13 @@ import {
   ShieldCheck,
   Search,
   FileSpreadsheet,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import ConnectGmailModal from '../../components/common/ConnectGmailModal';
 import ScheduleWatchModal from '../../components/common/ScheduleWatchModal';
 import CalendarModal from '../../components/common/CalendarModal';
-import MiniCalendar from '../../components/common/MiniCalendar';
 import ScheduledJobSelectModal from '../../components/common/ScheduledJobSelectModal';
-import ScallopBadge from '../../components/common/ScallopBadge';
-
-const TIME_PRESETS = [
-  { label: '09:30 AM', time24: '09:30', name: 'Morning' },
-  { label: '01:00 PM', time24: '13:00', name: 'Afternoon' },
-  { label: '05:30 PM', time24: '17:30', name: 'Evening' },
-  { label: '09:00 PM', time24: '21:00', name: 'Night' },
-];
 
 const DAYS_OF_WEEK = [
   { id: 'mon', label: 'M', full: 'Mon' },
@@ -66,6 +58,7 @@ export default function SchedulerPage() {
     totalJobsCount,
     appliedCount,
   } = useBot();
+
   const [schedulerStatus, setSchedulerStatus] = useState({
     active: false,
     last_run_date: null,
@@ -74,6 +67,7 @@ export default function SchedulerPage() {
     current_step: 0,
     step_description: 'Idle',
   });
+
   const [testingEmail, setTestingEmail] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -81,48 +75,50 @@ export default function SchedulerPage() {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [isJobSelectModalOpen, setIsJobSelectModalOpen] = useState(false);
+
+  const [selectedScheduleId, setSelectedScheduleId] = useState(null);
   const [editingWatchTime, setEditingWatchTime] = useState(null);
   const [editingTimeKey, setEditingTimeKey] = useState(null);
   const [editingTimeValue, setEditingTimeValue] = useState('');
   const [customTimeInput, setCustomTimeInput] = useState('');
   const [showAddCustomTime, setShowAddCustomTime] = useState(false);
-  const [editingTaskNameKey, setEditingTaskNameKey] = useState(null);
-  const [editingTaskNameValue, setEditingTaskNameValue] = useState('');
+  const [isEditingTimeInline, setIsEditingTimeInline] = useState(false);
+  const [editingTimeInlineValue, setEditingTimeInlineValue] = useState('');
 
-  const handleSaveJobSelection = async (jobIds) => {
-    const updatedConfig = {
-      ...config,
-      scheduler_action_mode: 'selected_jobs',
-      scheduled_selected_jobs: jobIds,
-    };
-    updateConfigValue('scheduler_action_mode', 'selected_jobs');
-    updateConfigValue('scheduled_selected_jobs', jobIds);
-    await handleSaveConfig(updatedConfig, true);
-    showToast(`Saved ${jobIds.length} jobs for scheduled apply!`, 'success');
+  // Parse time helper
+  const format12h = (timeStr) => {
+    if (!timeStr) return '09:30 AM';
+    const [h, m] = timeStr.split(':');
+    const hInt = parseInt(h, 10) || 0;
+    const period = hInt >= 12 ? 'PM' : 'AM';
+    const hour12 = hInt % 12 === 0 ? 12 : hInt % 12;
+    return `${hour12}:${String(m || '00').padStart(2, '0')} ${period}`;
   };
 
-  const handleApplySelectedJobsNow = async (jobIds) => {
-    try {
-      await applySelectedJobsNow(jobIds);
-      showToast(`Started application for ${jobIds.length} selected jobs!`, 'success');
-    } catch (err) {
-      showToast(err.message || 'Failed to apply to selected jobs', 'error');
-    }
-  };
-
+  // Parse time flexibly (e.g. "5 PM", "5PM", "5:00 PM", "17:00", "5p", "17")
   const parseTimeTo24h = (str) => {
     if (!str) return null;
-    const s = str.trim();
-    const match = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
-    if (!match) return null;
-    let h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    const period = match[3] ? match[3].toLowerCase() : null;
-    if (m < 0 || m > 59) return null;
-    if (period === 'pm' && h < 12) h += 12;
-    if (period === 'am' && h === 12) h = 0;
-    if (h < 0 || h > 23) return null;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const s = str.trim().toLowerCase();
+    // 12-hour format: "5 pm", "5pm", "5:00 pm", "5:30pm", "5p"
+    const match12 = s.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a|p)$/);
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = match12[2] ? parseInt(match12[2], 10) : 0;
+      const period = match12[3].startsWith('p') ? 'pm' : 'am';
+      if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+      if (period === 'pm' && h < 12) h += 12;
+      if (period === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    // 24-hour format: "17:00", "17", "09:30"
+    const match24 = s.match(/^(\d{1,2})(?::(\d{1,2}))?$/);
+    if (match24) {
+      let h = parseInt(match24[1], 10);
+      const m = match24[2] ? parseInt(match24[2], 10) : 0;
+      if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return null;
   };
 
   const loadStatus = async () => {
@@ -140,279 +136,151 @@ export default function SchedulerPage() {
     return () => clearInterval(interval);
   }, []);
 
-  if (!config) {
-    return <div className="text-slate-500 text-xs py-8 text-center">Loading scheduler configuration</div>;
-  }
+  // Multi-schedule list state management (backward-compatible)
+  const schedules = useMemo(() => {
+    if (!config) return [];
+    if (Array.isArray(config.schedules)) {
+      return config.schedules;
+    }
+    // Migration fallback from existing single schedule configuration
+    const times = Array.isArray(config.scheduled_times) && config.scheduled_times.length > 0
+      ? config.scheduled_times
+      : [];
+    if (times.length > 0) {
+      const baseName = (config.schedule_name || config.task_name || '').trim() || 'Daily Pipeline';
+      return times.map((t, idx) => ({
+        id: `sched_${idx + 1}`,
+        name: times.length === 1 ? baseName : `${baseName} ${idx + 1}`,
+        time: t,
+        frequency: config.scheduler_mode || 'everyday',
+        days: Array.isArray(config.scheduler_days) && config.scheduler_days.length > 0
+          ? config.scheduler_days
+          : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        date: config.scheduler_date || new Date().toISOString().split('T')[0],
+        action_mode: config.scheduler_action_mode || 'fetch_and_apply',
+        enabled: true,
+        selected_jobs: config.scheduled_selected_jobs || [],
+      }));
+    }
+    return [];
+  }, [config]);
 
-  // 12-hour converter
-  const format12h = (timeStr) => {
-    if (!timeStr) return '09:30 AM';
-    const [h, m] = timeStr.split(':');
-    const hInt = parseInt(h, 10) || 0;
-    const period = hInt >= 12 ? 'PM' : 'AM';
-    const hour12 = hInt % 12 === 0 ? 12 : hInt % 12;
-    return `${hour12}:${String(m || '00').padStart(2, '0')} ${period}`;
-  };
+  // Active schedule selection
+  const activeSchedule = schedules.find((s) => s.id === selectedScheduleId) || schedules[0] || null;
+  const activeScheduleId = activeSchedule?.id || null;
 
-  const scheduledTimes = Array.isArray(config.scheduled_times) && config.scheduled_times.length > 0
-    ? config.scheduled_times
-    : ['09:30'];
+  // Persist schedules to backend config
+  const persistSchedules = async (nextSchedules, toastMsg = null) => {
+    const times = Array.from(new Set(nextSchedules.filter((s) => s.enabled !== false).map((s) => s.time))).sort();
+    updateConfigValue('schedules', nextSchedules);
+    updateConfigValue('scheduled_times', times);
 
-  const primaryTimeStr = scheduledTimes[0] || '09:30';
-  const primaryTimeFormatted = format12h(primaryTimeStr);
-  const unappliedQueueCount = Math.max(0, (totalJobsCount || 0) - (appliedCount || 0));
-
-  const activeDays = Array.isArray(config.scheduler_days) && config.scheduler_days.length > 0
-    ? config.scheduler_days
-    : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-
-  const frequencyMode = config.scheduler_mode || (
-    activeDays.length === 7 ? 'everyday' :
-    (activeDays.length === 5 && ['mon', 'tue', 'wed', 'thu', 'fri'].every((d) => activeDays.includes(d))) ? 'weekdays' :
-    activeDays.length === 1 ? 'onetime' : 'custom'
-  );
-
-  const isOneTime = frequencyMode === 'onetime';
-  const isEveryDay = frequencyMode === 'everyday';
-  const isWeekdaysOnly = frequencyMode === 'weekdays';
-
-  const handleSetFrequency = (mode) => {
-    if (mode === 'onetime') {
-      const todayDay = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()];
-      const todayDate = new Date().toISOString().split('T')[0];
-      const targetDate = (!config.scheduler_date || config.scheduler_date < todayDate) ? todayDate : config.scheduler_date;
-      updateConfigValue('scheduler_mode', 'onetime');
-      updateConfigValue('scheduler_days', [todayDay]);
-      updateConfigValue('scheduler_date', targetDate);
-      handleSaveConfig({
-        ...config,
-        scheduler_mode: 'onetime',
-        scheduler_days: [todayDay],
-        scheduler_date: targetDate,
-      });
-      setIsCalendarModalOpen(true);
-    } else if (mode === 'everyday') {
-      updateConfigValue('scheduler_mode', 'everyday');
-      updateConfigValue('scheduler_days', ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
-      handleSaveConfig({
-        ...config,
-        scheduler_mode: 'everyday',
-        scheduler_days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-      });
-      showToast('Scheduled to run every day (7 days/week)', 'info');
-    } else if (mode === 'weekdays') {
-      updateConfigValue('scheduler_mode', 'weekdays');
-      updateConfigValue('scheduler_days', ['mon', 'tue', 'wed', 'thu', 'fri']);
-      handleSaveConfig({
-        ...config,
-        scheduler_mode: 'weekdays',
-        scheduler_days: ['mon', 'tue', 'wed', 'thu', 'fri'],
-      });
-      showToast('Scheduled to run on weekdays only (Mon-Fri)', 'info');
+    const first = nextSchedules[0] || null;
+    const payload = {
+      ...config,
+      schedules: nextSchedules,
+      scheduled_times: times,
+    };
+    if (first) {
+      payload.schedule_name = first.name;
+      payload.scheduler_action_mode = first.action_mode;
+      payload.scheduler_mode = first.frequency;
+      payload.scheduler_days = first.days;
+      payload.scheduler_date = first.date;
+      updateConfigValue('schedule_name', first.name);
+      updateConfigValue('scheduler_action_mode', first.action_mode);
+      updateConfigValue('scheduler_mode', first.frequency);
+      updateConfigValue('scheduler_days', first.days);
+      updateConfigValue('scheduler_date', first.date);
+    }
+    try {
+      await handleSaveConfig(payload, true);
+      if (toastMsg) showToast(toastMsg, 'success');
+    } catch (e) {
+      showToast('Failed to save scheduler updates', 'error');
     }
   };
 
-  const handleToggleDay = (dayId) => {
-    if (frequencyMode === 'onetime') {
-      updateConfigValue('scheduler_days', [dayId]);
-      return;
+  const handleUpdateActiveSchedule = async (field, value) => {
+    if (!activeScheduleId) return;
+    const nextSchedules = schedules.map((s) => (s.id === activeScheduleId ? { ...s, [field]: value } : s));
+    await persistSchedules(nextSchedules);
+  };
+
+  // Create new schedule routine
+  const handleCreateNewSchedule = async () => {
+    const newId = `sched_${Date.now()}`;
+    const newSched = {
+      id: newId,
+      name: `Scheduled Routine ${schedules.length + 1}`,
+      time: '18:00',
+      frequency: 'everyday',
+      days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+      date: new Date().toISOString().split('T')[0],
+      action_mode: 'fetch_and_apply',
+      enabled: true,
+      selected_jobs: [],
+    };
+    const nextSchedules = [...schedules, newSched];
+    setSelectedScheduleId(newId);
+    await persistSchedules(nextSchedules, `New schedule "${newSched.name}" created!`);
+  };
+
+  // UNRESTRICTED DELETION: Allows deleting any schedule, even the last one
+  const handleDeleteSchedule = async (schedId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const target = schedules.find((s) => s.id === schedId);
+    const nextSchedules = schedules.filter((s) => s.id !== schedId);
+    if (activeScheduleId === schedId) {
+      setSelectedScheduleId(nextSchedules[0]?.id || null);
     }
-    const exists = activeDays.includes(dayId);
-    let next;
-    if (exists) {
-      if (activeDays.length === 1) {
-        showToast('At least one day must be selected', 'warning');
-        return;
-      }
-      next = activeDays.filter((d) => d !== dayId);
-    } else {
-      next = [...activeDays, dayId];
-    }
-    updateConfigValue('scheduler_days', next);
-    if (next.length === 7) {
-      updateConfigValue('scheduler_mode', 'everyday');
-    } else if (next.length === 5 && ['mon', 'tue', 'wed', 'thu', 'fri'].every((d) => next.includes(d))) {
-      updateConfigValue('scheduler_mode', 'weekdays');
-    } else {
-      updateConfigValue('scheduler_mode', 'custom');
+    await persistSchedules(nextSchedules, `Deleted schedule "${target?.name || 'Routine'}"`);
+  };
+
+  // Toggle individual schedule routine active/paused
+  const handleToggleScheduleEnabled = async (schedId, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const nextSchedules = schedules.map((s) => (s.id === schedId ? { ...s, enabled: !s.enabled } : s));
+    await persistSchedules(nextSchedules);
+  };
+
+  const handleSaveJobSelection = async (jobIds) => {
+    if (!activeScheduleId) return;
+    const nextSchedules = schedules.map((s) => (s.id === activeScheduleId ? { ...s, selected_jobs: jobIds } : s));
+    updateConfigValue('scheduled_selected_jobs', jobIds);
+    await persistSchedules(nextSchedules, `Saved ${jobIds.length} jobs for scheduled apply!`);
+  };
+
+  const handleApplySelectedJobsNow = async (jobIds) => {
+    try {
+      await applySelectedJobsNow(jobIds);
+      showToast(`Started application for ${jobIds.length} selected jobs!`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to apply to selected jobs', 'error');
     }
   };
 
   const handleCalendarDateSelect = (dateStr) => {
     const dObj = new Date(dateStr);
     const dayCode = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dObj.getDay()];
-    handleSaveConfig({
-      ...config,
-      scheduler_mode: 'onetime',
-      scheduler_date: dateStr,
-      scheduler_days: [dayCode],
-    });
-    const formatted = dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    showToast(`One-time schedule set for ${formatted}`, 'success');
-  };
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const rawDateStr = config.scheduler_date || todayStr;
-  const selectedDateStr = rawDateStr < todayStr ? todayStr : rawDateStr;
-  const selectedDateObj = new Date(selectedDateStr.includes('T') ? selectedDateStr : selectedDateStr + 'T00:00:00');
-  const formattedSelectedDate = !isNaN(selectedDateObj.getTime())
-    ? selectedDateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-    : selectedDateStr;
-
-  const handleAddPresetTime = async (time24) => {
-    if (scheduledTimes.includes(time24)) {
-      showToast(`${format12h(time24)} is already scheduled`, 'info');
-      return;
-    }
-    const next = [...scheduledTimes, time24].sort();
-    updateConfigValue('scheduled_times', next);
-    updateConfigValue('scheduler_enabled', true);
-    try {
-      await handleSaveConfig({ ...config, scheduled_times: next, scheduler_enabled: true }, true);
-      showToast(`Added ${format12h(time24)} to daily schedule`, 'success');
-    } catch (e) {
-      showToast('Failed to save schedule time', 'error');
+    if (activeSchedule) {
+      const nextSchedules = schedules.map((s) =>
+        s.id === activeScheduleId
+          ? { ...s, frequency: 'onetime', date: dateStr, days: [dayCode] }
+          : s
+      );
+      persistSchedules(nextSchedules);
+      const formatted = dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      showToast(`One-time run set for ${formatted}`, 'success');
     }
   };
 
-  const handleRemoveTime = async (time24) => {
-    if (scheduledTimes.length <= 1) {
-      showToast('At least one schedule time is required', 'warning');
-      return;
-    }
-    const next = scheduledTimes.filter((t) => t !== time24);
-    updateConfigValue('scheduled_times', next);
-    try {
-      await handleSaveConfig({ ...config, scheduled_times: next, scheduler_enabled: true }, true);
-      showToast(`Removed ${format12h(time24)} from schedule`, 'info');
-    } catch (e) {
-      showToast('Failed to save schedule time', 'error');
-    }
-  };
-
-  const handleSaveFromWatchModal = async (newTime24, enableScheduler = true) => {
-    let updatedTimes;
-    if (editingWatchTime) {
-      updatedTimes = scheduledTimes.map((t) => (t === editingWatchTime ? newTime24 : t));
-      updatedTimes = Array.from(new Set(updatedTimes)).sort();
-    } else {
-      updatedTimes = Array.from(new Set([...scheduledTimes, newTime24])).sort();
-    }
-    updateConfigValue('scheduled_times', updatedTimes);
-    updateConfigValue('scheduler_enabled', true);
-
-    try {
-      await handleSaveConfig({
-        ...config,
-        scheduled_times: updatedTimes,
-        scheduler_enabled: true,
-      }, true);
-      showToast(`Scheduled time updated to ${format12h(newTime24)}`, 'success');
-    } catch (e) {
-      showToast('Failed to save scheduled time', 'error');
-    }
-  };
-
-  const handleAddCustomTimeSubmit = async (e) => {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!customTimeInput || !customTimeInput.trim()) {
-      setShowAddCustomTime(false);
-      return;
-    }
-    const parsed = parseTimeTo24h(customTimeInput);
-    if (!parsed) {
-      showToast('Please enter a valid time (e.g. 02:30 PM or 14:30)', 'error');
-      return;
-    }
-    if (scheduledTimes.includes(parsed)) {
-      showToast(`${format12h(parsed)} is already in your schedule`, 'info');
-      return;
-    }
-    const next = [...scheduledTimes, parsed].sort();
-    updateConfigValue('scheduled_times', next);
-    updateConfigValue('scheduler_enabled', true);
-    setCustomTimeInput('');
-    setShowAddCustomTime(false);
-    try {
-      await handleSaveConfig({ ...config, scheduled_times: next, scheduler_enabled: true }, true);
-      showToast(`Added ${format12h(parsed)} to daily schedule`, 'success');
-    } catch (e) {
-      showToast('Failed to save schedule time', 'error');
-    }
-  };
-
-  const handleSaveInlineEdit = async (originalTime24) => {
-    if (!editingTimeValue || !editingTimeValue.trim()) {
-      setEditingTimeKey(null);
-      return;
-    }
-    const parsed = parseTimeTo24h(editingTimeValue);
-    if (!parsed) {
-      showToast('Please enter a valid time (e.g. 02:30 PM or 14:30)', 'error');
-      setEditingTimeKey(null);
-      return;
-    }
-    if (parsed === originalTime24) {
-      setEditingTimeKey(null);
-      return;
-    }
-    if (scheduledTimes.includes(parsed)) {
-      showToast(`${format12h(parsed)} is already in your schedule`, 'info');
-      setEditingTimeKey(null);
-      return;
-    }
-    const next = scheduledTimes.map((t) => (t === originalTime24 ? parsed : t)).sort();
-    updateConfigValue('scheduled_times', next);
-    updateConfigValue('scheduler_enabled', true);
-    setEditingTimeKey(null);
-    try {
-      await handleSaveConfig({ ...config, scheduled_times: next, scheduler_enabled: true }, true);
-      showToast(`Updated schedule to ${format12h(parsed)}`, 'success');
-    } catch (e) {
-      showToast('Failed to save schedule time', 'error');
-    }
-  };
-
-  const handleSaveTaskName = async (t) => {
-    const currentNames = config.task_names || {};
-    const val = editingTaskNameValue.trim() || 'Name';
-    const updated = { ...currentNames, [t]: val };
-    updateConfigValue('task_names', updated);
-    setEditingTaskNameKey(null);
-    try {
-      await handleSaveConfig({ ...config, task_names: updated }, true);
-      showToast(`Task renamed to "${val}"`, 'success');
-    } catch (e) {
-      showToast('Failed to save task name', 'error');
-    }
-  };
-
-  const handleTestEmail = async () => {
-    const user = config.smtp_user;
-    const pass = config.smtp_password;
-    const recipient = config.recipient_email || user;
-
-    if (!user || !pass) {
-      showToast('Please connect your Gmail account or provide SMTP credentials first', 'error');
-      return;
-    }
-
-    setTestingEmail(true);
-    try {
-      const res = await testEmailSettings({
-        to_email: recipient,
-        smtp_host: config.smtp_host || 'smtp.gmail.com',
-        smtp_port: parseInt(config.smtp_port, 10) || 587,
-        smtp_user: user,
-        smtp_password: pass,
-        smtp_use_tls: true,
-      });
-      showToast(res.message || 'Verification test email dispatched successfully!', 'success');
-    } catch (err) {
-      showToast(err.message || 'SMTP Authentication failed. Verify your Gmail App Password.', 'error');
-    } finally {
-      setTestingEmail(false);
-    }
+  const handleSaveFromWatchModal = async (newTime24) => {
+    if (!activeScheduleId) return;
+    const nextSchedules = schedules.map((s) =>
+      s.id === activeScheduleId ? { ...s, time: newTime24 } : s
+    );
+    await persistSchedules(nextSchedules, `Scheduled time updated to ${format12h(newTime24)}`);
   };
 
   const handleRunPipelineNow = async () => {
@@ -437,31 +305,38 @@ export default function SchedulerPage() {
   };
 
   const onSave = async () => {
-    const sName = (config.schedule_name || config.task_name || '').trim();
-    if (!sName) {
-      showToast('Schedule Name is a mandatory field. Please enter a name.', 'error');
-      return;
-    }
     setSaving(true);
     try {
-      updateConfigValue('scheduler_enabled', true);
-      await handleSaveConfig({ ...config, schedule_name: sName, task_name: sName, scheduler_enabled: true }, true);
+      await handleSaveConfig({ ...config, scheduler_enabled: true }, true);
       showToast('Scheduler configuration saved successfully', 'success');
     } finally {
       setSaving(false);
     }
   };
 
-  const pipelineStages = [
-    { num: 1, title: 'Job Discovery', desc: 'Crawls matching job targets & ATS postings' },
-    { num: 2, title: 'Auto-Apply', desc: 'Fills forms & submits verified resume' },
-    { num: 3, title: 'Inbox Scan', desc: 'Detects interview invites & OA recruiter replies' },
-    { num: 4, title: 'Daily Digest', desc: 'Dispatches summary email of today applications' },
-  ];
+  if (!config) {
+    return <div className="text-slate-500 text-xs py-8 text-center">Loading scheduler configuration</div>;
+  }
+
+  // Active schedule derived helpers
+  const currentDays = activeSchedule?.days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const currentFrequency = activeSchedule?.frequency || 'everyday';
+  const isOneTime = currentFrequency === 'onetime';
+  const isEveryDay = currentFrequency === 'everyday';
+  const isWeekdaysOnly = currentFrequency === 'weekdays';
+  const rawDateStr = activeSchedule?.date || new Date().toISOString().split('T')[0];
+  const selectedDateObj = new Date(rawDateStr.includes('T') ? rawDateStr : rawDateStr + 'T00:00:00');
+  const formattedSelectedDate = !isNaN(selectedDateObj.getTime())
+    ? selectedDateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    : rawDateStr;
+
+  const enabledSchedules = schedules.filter((s) => s.enabled !== false);
+  const primaryTimeStr = enabledSchedules[0]?.time || (schedules[0]?.time ?? null);
+  const primaryTimeFormatted = primaryTimeStr ? format12h(primaryTimeStr) : 'Not Scheduled';
 
   return (
-    <div className="flex-1 flex flex-col justify-between gap-3 w-full max-w-full pb-0.5">
-      {/* ── Top Header - Identical to all pages ── */}
+    <div className="space-y-3.5 w-full max-w-full pb-8">
+      {/* ── Top Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1">
         <div className="flex items-center gap-3">
           <Clock className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -470,7 +345,7 @@ export default function SchedulerPage() {
               Daily Autonomous Scheduler & Pipeline
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Hands-free daily automation: Collects jobs, auto-applies verified resumes, and executes autonomous workflows on schedule.
+              Hands-free automation: Manage multiple independent scheduled routines across your job platforms.
             </p>
           </div>
         </div>
@@ -499,7 +374,7 @@ export default function SchedulerPage() {
 
       {/* ── 3 Top Status Metric Cards ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {/* Card 1: Scheduler Daemon with In-Card Toggle */}
+        {/* Card 1: Scheduler Daemon */}
         <div className="bg-white dark:bg-slate-900 rounded-[8px] border border-slate-200/90 dark:border-slate-800 p-3 px-3.5 shadow-xs flex flex-col justify-between hover:shadow-sm transition">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
@@ -533,15 +408,17 @@ export default function SchedulerPage() {
 
           <div className="my-1.5">
             <div className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
-              <span>{config.scheduler_enabled ? 'Active' : 'Paused'}</span>
+              <span>{config.scheduler_enabled && enabledSchedules.length > 0 ? 'Active' : 'Paused'}</span>
               <span
                 className={`text-[10px] font-semibold px-2 py-0.5 rounded-[4px] border ${
-                  config.scheduler_enabled
+                  config.scheduler_enabled && enabledSchedules.length > 0
                     ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
                 }`}
               >
-                {config.scheduler_enabled ? 'Daemon Running' : 'Standby'}
+                {config.scheduler_enabled && enabledSchedules.length > 0
+                  ? `${enabledSchedules.length} Active Routine${enabledSchedules.length > 1 ? 's' : ''}`
+                  : 'Standby'}
               </span>
             </div>
           </div>
@@ -549,20 +426,25 @@ export default function SchedulerPage() {
           <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Background Service</span>
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              {config.scheduler_enabled ? 'Wakes daily on schedule' : 'Click switch to enable'}
+              {config.scheduler_enabled ? 'Runs active routines' : 'Click switch to enable'}
             </span>
           </div>
         </div>
 
-        {/* Card 2: Scheduled Times Overview */}
+        {/* Card 2: Next Scheduled Time */}
         <div
-          onClick={() => setIsScheduleModalOpen(true)}
+          onClick={() => {
+            if (activeSchedule) {
+              setEditingWatchTime(activeSchedule.time);
+              setIsScheduleModalOpen(true);
+            }
+          }}
           className="bg-white dark:bg-slate-900 rounded-[8px] border border-slate-200/90 dark:border-slate-800 p-3 px-3.5 shadow-xs flex flex-col justify-between hover:shadow-sm hover:border-blue-300 dark:hover:border-blue-700 transition cursor-pointer group"
-          title="Click to launch interactive clock dial"
+          title="Click to launch clock dial"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-              Scheduled Apply Time
+              Primary Apply Time
             </span>
             <div className="w-7 h-7 rounded-[5px] bg-blue-50 dark:bg-blue-500/15 border border-blue-200 dark:border-blue-500/30 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-500/25 transition">
               <Clock className="w-3.5 h-3.5" />
@@ -571,10 +453,10 @@ export default function SchedulerPage() {
 
           <div className="my-1.5 flex items-center justify-between gap-2">
             <div className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-tight leading-none flex items-center gap-2">
-              <span>{config.scheduler_enabled ? primaryTimeFormatted : 'Not Scheduled'}</span>
-              {scheduledTimes.length > 1 && config.scheduler_enabled && (
+              <span>{config.scheduler_enabled && schedules.length > 0 ? primaryTimeFormatted : 'Not Scheduled'}</span>
+              {schedules.length > 1 && (
                 <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  (+{scheduledTimes.length - 1} more)
+                  (+{schedules.length - 1} more)
                 </span>
               )}
             </div>
@@ -585,7 +467,7 @@ export default function SchedulerPage() {
 
           <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>
-              {isEveryDay ? 'Daily (7 days)' : isWeekdaysOnly ? 'Weekdays (Mon-Fri)' : `${activeDays.length} days/week`}
+              {schedules.length} Total Routine{schedules.length !== 1 ? 's' : ''} Configured
             </span>
             <span className="font-semibold text-slate-700 dark:text-slate-300">
               Interactive Dial Available
@@ -624,685 +506,530 @@ export default function SchedulerPage() {
       </div>
 
       {/* ── Main Schedule Section ── */}
-      <div className="space-y-3.5">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-          {/* Left Column: Automation Schedule & Routine */}
-          <div className="bg-white dark:bg-slate-900 rounded-[8px] border border-slate-200/90 dark:border-slate-800 p-4 shadow-xs">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+        {/* Left Column: Schedule Routine Editor */}
+        <div className="bg-white dark:bg-slate-900 rounded-[8px] border border-slate-200/90 dark:border-slate-800 p-4 shadow-xs">
+          {activeSchedule ? (
             <div>
+              {/* Header with Title & Action */}
               <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-500" />
-                <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                  Daily Routine & Execution Schedule
-                </h3>
-              </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                {scheduledTimes.length} Run{scheduledTimes.length > 1 ? 's' : ''} Configured
-              </span>
-            </div>
-
-            {/* Schedule Name Input Field - Mandate Field */}
-            <div className="mt-2.5 space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                  <span>Schedule Name</span>
-                  <span className="text-rose-500 font-bold">*</span>
-                  <span className="text-[10px] text-slate-400 font-normal">(Mandatory)</span>
-                </label>
-                {(!config.schedule_name || !config.schedule_name.trim()) && (
-                  <span className="text-[10px] font-medium text-amber-500">
-                    Required field
-                  </span>
-                )}
-              </div>
-              <input
-                type="text"
-                required
-                value={config.schedule_name || config.task_name || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  updateConfigValue('schedule_name', val);
-                  updateConfigValue('task_name', val);
-                }}
-                placeholder="e.g. Daily Pipeline"
-                className={`w-full h-8 px-2.5 rounded-[5px] bg-slate-50 dark:bg-slate-800/80 border text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 font-medium transition focus:outline-none ${
-                  !config.schedule_name || !config.schedule_name.trim()
-                    ? 'border-amber-400/80 dark:border-amber-500/60 focus:border-amber-500'
-                    : 'border-slate-200 dark:border-slate-700 focus:border-blue-500'
-                }`}
-              />
-            </div>
-
-            {/* Schedule Frequency / Days of the Week */}
-            <div className="space-y-2 mt-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Active Days
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleSetFrequency('onetime');
-                      setIsCalendarModalOpen(true);
-                    }}
-                    className={`px-2.5 py-1 rounded-[4px] text-[10.5px] font-semibold border transition cursor-pointer ${
-                      isOneTime
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    One time
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetFrequency('everyday')}
-                    className={`px-2.5 py-1 rounded-[4px] text-[10.5px] font-semibold border transition cursor-pointer ${
-                      isEveryDay
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    All 7 Days
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetFrequency('weekdays')}
-                    className={`px-2.5 py-1 rounded-[4px] text-[10.5px] font-semibold border transition cursor-pointer ${
-                      isWeekdaysOnly
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    Weekdays Only
-                  </button>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-emerald-500" />
+                  <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Edit Routine: {activeSchedule.name}
+                  </h3>
                 </div>
-              </div>
-
-              {/* Content dynamically changes according to One time | All 7 Days | Weekdays Only */}
-              {isOneTime ? (
                 <button
                   type="button"
-                  onClick={() => setIsCalendarModalOpen(true)}
-                  className="w-full h-9 flex items-center justify-between px-3 bg-blue-50/80 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/40 rounded-[6px] hover:border-blue-500 transition cursor-pointer text-xs group"
-                  title="Click to open calendar and change execution date"
+                  onClick={handleCreateNewSchedule}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/25 border border-blue-200 dark:border-blue-500/30 text-[10.5px] font-bold transition cursor-pointer"
                 >
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <span className="text-slate-600 dark:text-slate-400 font-medium">
-                      Run Date:
-                    </span>
-                    <span className="font-bold text-slate-900 dark:text-slate-100">
-                      {formattedSelectedDate}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 group-hover:underline flex items-center gap-1">
-                    Change Date &rarr;
-                  </span>
+                  <Plus className="w-3 h-3" />
+                  <span>+ New Schedule</span>
                 </button>
-              ) : isWeekdaysOnly ? (
-                <div className="grid grid-cols-5 gap-1.5">
-                  {DAYS_OF_WEEK.slice(0, 5).map((d) => {
-                    const isSelected = activeDays.includes(d.id);
-                    return (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => handleToggleDay(d.id)}
-                        className={`py-1.5 rounded-[5px] text-xs font-bold text-center border transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-50 dark:bg-blue-500/15 border-blue-400 dark:border-blue-500/50 text-blue-700 dark:text-blue-400'
-                            : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-300'
-                        }`}
-                        title={d.full}
-                      >
-                        <div>{d.full}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-7 gap-1">
-                  {DAYS_OF_WEEK.map((d) => {
-                    const isSelected = activeDays.includes(d.id);
-                    return (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => handleToggleDay(d.id)}
-                        className={`py-1.5 rounded-[5px] text-xs font-bold text-center border transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-50 dark:bg-blue-500/15 border-blue-400 dark:border-blue-500/50 text-blue-700 dark:text-blue-400'
-                            : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-300'
-                        }`}
-                        title={d.full}
-                      >
-                        <div>{d.label}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Schedule Summary Description */}
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                {isOneTime ? (
-                  <span>One-time run scheduled for {formattedSelectedDate} at {scheduledTimes.map(format12h).join(', ')}</span>
-                ) : isEveryDay ? (
-                  <span>Repeats daily (Monday to Sunday) at {scheduledTimes.map(format12h).join(', ')}</span>
-                ) : isWeekdaysOnly ? (
-                  <span>Repeats Monday through Friday at {scheduledTimes.map(format12h).join(', ')}</span>
-                ) : (
-                  <span>Runs on {activeDays.map((d) => d.toUpperCase()).join(', ')} at {scheduledTimes.map(format12h).join(', ')}</span>
-                )}
               </div>
-            </div>
 
-            {/* Scheduled Times as Interactive Badges */}
-            <div className="space-y-2 mt-3">
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                Scheduled Execution Times
-              </span>
+              {/* Schedule Name Input */}
+              <div className="mt-2.5 space-y-1">
+                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                  <span>Schedule Name</span>
+                </label>
+                <input
+                  type="text"
+                  value={activeSchedule.name}
+                  onChange={(e) => handleUpdateActiveSchedule('name', e.target.value)}
+                  placeholder="e.g. Morning Discovery, Night Apply"
+                  className="w-full h-8 px-2.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-[6px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition"
+                />
+              </div>
 
-              {/* List of Scheduled Times */}
-              <div className="flex flex-wrap gap-2 items-center">
-                {scheduledTimes.map((t) => {
-                  const isEditingThis = editingTimeKey === t;
-                  return (
-                    <div
-                      key={t}
-                      style={{ height: '30px', minHeight: '30px', maxHeight: '30px', borderRadius: '4px', boxSizing: 'border-box' }}
-                      className={`inline-flex items-center gap-2 px-3 text-xs font-bold shadow-2xs transition ${
-                        isEditingThis
-                          ? 'bg-white dark:bg-slate-900 border border-blue-500 text-slate-900 dark:text-slate-100'
-                          : 'bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:border-blue-300 dark:hover:border-blue-700'
+              {/* Active Days Frequency Selector */}
+              <div className="mt-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Active Days
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const todayDay = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()];
+                        const nextSchedules = schedules.map((s) =>
+                          s.id === activeScheduleId
+                            ? { ...s, frequency: 'onetime', days: [todayDay] }
+                            : s
+                        );
+                        persistSchedules(nextSchedules);
+                        setIsCalendarModalOpen(true);
+                      }}
+                      className={`px-2.5 py-1 rounded-[4px] text-[10.5px] font-semibold border transition cursor-pointer ${
+                        isOneTime
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                       }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingWatchTime(t);
-                          setIsScheduleModalOpen(true);
-                        }}
-                        className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition cursor-pointer p-0 shrink-0 flex items-center justify-center hover:scale-110"
-                        title="Open Clock Dial"
-                      >
-                        <Clock className="w-3.5 h-3.5" />
-                      </button>
+                      One time
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextSchedules = schedules.map((s) =>
+                          s.id === activeScheduleId
+                            ? { ...s, frequency: 'everyday', days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] }
+                            : s
+                        );
+                        persistSchedules(nextSchedules, 'Routine set to run daily');
+                      }}
+                      className={`px-2.5 py-1 rounded-[4px] text-[10.5px] font-semibold border transition cursor-pointer ${
+                        isEveryDay
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      All 7 Days
+                    </button>
 
-                      {isEditingThis ? (
-                        <input
-                          type="text"
-                          value={editingTimeValue}
-                          onChange={(e) => setEditingTimeValue(e.target.value)}
-                          onBlur={() => handleSaveInlineEdit(t)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveInlineEdit(t);
-                            if (e.key === 'Escape') setEditingTimeKey(null);
-                          }}
-                          placeholder="12:30 AM"
-                          style={{ width: '64px', height: '20px' }}
-                          className="bg-transparent text-center font-bold text-xs text-slate-900 dark:text-slate-100 focus:outline-none p-0 border-0 leading-none select-all"
-                          autoFocus
-                        />
-                      ) : (
-                        <span
-                          onClick={() => {
-                            setEditingTimeKey(t);
-                            setEditingTimeValue(format12h(t));
-                          }}
-                          style={{ width: '64px' }}
-                          className="text-center leading-none cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition select-none"
-                          title="Click to edit time"
-                        >
-                          {format12h(t)}
-                        </span>
-                      )}
+                  </div>
+                </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTime(t)}
-                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer ml-0.5 flex items-center justify-center p-0 shrink-0"
-                        title={`Remove ${format12h(t)}`}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                {isOneTime ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCalendarModalOpen(true)}
+                    className="w-full h-9 flex items-center justify-between px-3 bg-blue-50/80 dark:bg-blue-500/10 border border-blue-300 dark:border-blue-500/40 rounded-[6px] hover:border-blue-500 transition cursor-pointer text-xs group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span className="text-slate-600 dark:text-slate-400 font-medium">Run Date:</span>
+                      <span className="font-bold text-slate-900 dark:text-slate-100">{formattedSelectedDate}</span>
                     </div>
-                  );
-                })}
+                    <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 group-hover:underline">
+                      Change Date &rarr;
+                    </span>
+                  </button>
+                ) : (
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {DAYS_OF_WEEK.map((d) => {
+                      const isSelected = currentDays.includes(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => {
+                            const exists = currentDays.includes(d.id);
+                            const next = exists
+                              ? currentDays.filter((x) => x !== d.id)
+                              : [...currentDays, d.id];
+                            handleUpdateActiveSchedule('days', next);
+                          }}
+                          className={`h-8 rounded-[5px] text-xs font-bold border transition cursor-pointer flex flex-col items-center justify-center ${
+                            isSelected
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                              : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-300'
+                          }`}
+                        >
+                          <div>{d.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
-                {/* Add Custom Time Trigger */}
-                {!showAddCustomTime ? (
+              {/* Execution Time for This Schedule */}
+              <div className="space-y-2 mt-3">
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                  Scheduled Execution Time
+                </span>
+
+                <div className="flex flex-wrap gap-2 items-center">
+                  <div
+                    style={{ height: '30px', minHeight: '30px', maxHeight: '30px', borderRadius: '4px', boxSizing: 'border-box' }}
+                    className="inline-flex items-center gap-2 px-3 text-xs font-bold shadow-2xs transition bg-white dark:bg-slate-900 border border-blue-500 text-slate-900 dark:text-slate-100"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingWatchTime(activeSchedule.time);
+                        setIsScheduleModalOpen(true);
+                      }}
+                      className="w-5 h-5 rounded-full bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-500/25 transition cursor-pointer p-0 shrink-0"
+                      title="Open Clock Dial"
+                    >
+                      <Clock className="w-3 h-3" />
+                    </button>
+                    {isEditingTimeInline ? (
+                      <input
+                        type="text"
+                        value={editingTimeInlineValue}
+                        onChange={(e) => setEditingTimeInlineValue(e.target.value)}
+                        onBlur={() => {
+                          const t24 = parseTimeTo24h(editingTimeInlineValue);
+                          if (t24) {
+                            handleUpdateActiveSchedule('time', t24);
+                            showToast(`Time updated to ${format12h(t24)}`, 'success');
+                          }
+                          setIsEditingTimeInline(false);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const t24 = parseTimeTo24h(editingTimeInlineValue);
+                            if (t24) {
+                              handleUpdateActiveSchedule('time', t24);
+                              showToast(`Time updated to ${format12h(t24)}`, 'success');
+                            }
+                            setIsEditingTimeInline(false);
+                          } else if (e.key === 'Escape') {
+                            setIsEditingTimeInline(false);
+                          }
+                        }}
+                        autoFocus
+                        className="w-[68px] text-xs font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 border border-blue-500 rounded px-1 py-0.5 focus:outline-none"
+                      />
+                    ) : (
+                      <span
+                        onClick={() => {
+                          setIsEditingTimeInline(true);
+                          setEditingTimeInlineValue(format12h(activeSchedule.time));
+                        }}
+                        className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                        title="Click to edit time directly"
+                      >
+                        {format12h(activeSchedule.time)}
+                      </span>
+                    )}
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
-                      setShowAddCustomTime(true);
-                      setCustomTimeInput('');
+                      setEditingWatchTime(activeSchedule.time);
+                      setIsScheduleModalOpen(true);
                     }}
                     style={{ height: '30px', minHeight: '30px', maxHeight: '30px', borderRadius: '4px', boxSizing: 'border-box' }}
                     className="inline-flex items-center gap-1.5 px-3 border border-dashed border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span className="leading-none">Add Time</span>
+                    <Clock className="w-3 h-3" />
+                    <span>Change via Dial</span>
                   </button>
-                ) : (
+                </div>
+              </div>
+
+              {/* 3-Mode Unified Scheduler Execution Modes */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5 mt-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                      Scheduler Execution Mode
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Choose what this routine executes at its scheduled time
+                    </span>
+                  </div>
+                  <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full border bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700">
+                    {activeSchedule.action_mode === 'selected_jobs'
+                      ? 'Mode 3: Apply Selected'
+                      : activeSchedule.action_mode === 'collect_only'
+                      ? 'Mode 2: Discovery Only'
+                      : 'Mode 1: Fetch & Auto-Apply'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {/* Mode 1: Fetch & Auto-Apply */}
                   <div
-                    style={{ height: '30px', minHeight: '30px', maxHeight: '30px', borderRadius: '4px', boxSizing: 'border-box' }}
-                    className="inline-flex items-center gap-2 px-3 bg-white dark:bg-slate-900 border border-blue-500 text-xs font-bold shadow-2xs"
+                    onClick={() => handleUpdateActiveSchedule('action_mode', 'fetch_and_apply')}
+                    className={`p-2.5 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 min-h-[112px] ${
+                      (activeSchedule.action_mode || 'fetch_and_apply') === 'fetch_and_apply'
+                        ? 'border-blue-500/80 bg-blue-50/50 dark:bg-blue-500/10 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingWatchTime(null);
-                        setIsScheduleModalOpen(true);
-                      }}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700 transition cursor-pointer p-0 shrink-0"
-                      title="Pick via Clock Dial"
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                    </button>
-                    <input
-                      type="text"
-                      value={customTimeInput}
-                      onChange={(e) => setCustomTimeInput(e.target.value)}
-                      onBlur={() => {
-                        if (customTimeInput.trim()) {
-                          handleAddCustomTimeSubmit();
-                        } else {
-                          setShowAddCustomTime(false);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddCustomTimeSubmit(e);
-                        if (e.key === 'Escape') {
-                          setShowAddCustomTime(false);
-                          setCustomTimeInput('');
-                        }
-                      }}
-                      placeholder="02:30 PM"
-                      style={{ width: '64px', height: '20px' }}
-                      className="bg-transparent text-center font-bold text-xs text-slate-900 dark:text-slate-100 focus:outline-none p-0 border-0 leading-none placeholder-slate-400"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowAddCustomTime(false);
-                        setCustomTimeInput('');
-                      }}
-                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer p-0 shrink-0"
-                      title="Cancel"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* 2-Way Scheduler Execution Modes */}
-          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 mt-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
-                  Scheduler Execution Mode
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  Choose how the scheduler operates when triggered at your set time
-                </span>
-              </div>
-              <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full border bg-slate-50 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700">
-                {config.scheduler_action_mode === 'selected_jobs' ? 'Mode 2: Apply Selected' : 'Mode 1: Fetch & Apply'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {/* Mode 1: Fetch & Auto-Apply */}
-              <div
-                onClick={async () => {
-                  updateConfigValue('scheduler_action_mode', 'fetch_and_apply');
-                  await handleSaveConfig({ ...config, scheduler_action_mode: 'fetch_and_apply' }, true);
-                  showToast('Mode 1 active: Set time -> Fetch jobs + Auto-apply', 'info');
-                }}
-                className={`p-3 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 ${
-                  (config.scheduler_action_mode || 'fetch_and_apply') === 'fetch_and_apply'
-                    ? 'border-blue-500/80 bg-blue-50/50 dark:bg-blue-500/10 shadow-2xs'
-                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                      1
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                            1
+                          </div>
+                          <span className="text-[11.5px] font-bold text-slate-900 dark:text-slate-100">
+                            Fetch & Auto-Apply
+                          </span>
+                        </div>
+                        {(activeSchedule.action_mode || 'fetch_and_apply') === 'fetch_and_apply' && (
+                          <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[2.5]" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug mt-1.5">
+                        Crawl fresh matching jobs from enabled platforms + Auto-apply immediately.
+                      </p>
                     </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                      Fetch & Auto-Apply
-                    </span>
-                  </div>
-                  {(config.scheduler_action_mode || 'fetch_and_apply') === 'fetch_and_apply' && (
-                    <Check className="w-4 h-4 text-blue-600 dark:text-blue-400 stroke-[2.5]" />
-                  )}
-                </div>
-                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
-                  Set time &rarr; Fetch fresh matching jobs from enabled platforms + Auto-apply immediately.
-                </p>
-              </div>
-
-              {/* Mode 2: Apply Selected Jobs */}
-              <div
-                onClick={async () => {
-                  updateConfigValue('scheduler_action_mode', 'selected_jobs');
-                  await handleSaveConfig({ ...config, scheduler_action_mode: 'selected_jobs' }, true);
-                  setIsJobSelectModalOpen(true);
-                }}
-                className={`p-3 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 ${
-                  config.scheduler_action_mode === 'selected_jobs'
-                    ? 'border-emerald-500/80 bg-emerald-50/50 dark:bg-emerald-500/10 shadow-2xs'
-                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                      2
+                    <div className="mt-auto pt-1">
+                      <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                        Full Pipeline Active
+                      </span>
                     </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                      Apply Selected Jobs
-                    </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                      {(config.scheduled_selected_jobs || []).length} queued
-                    </span>
-                    {config.scheduler_action_mode === 'selected_jobs' && (
-                      <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[2.5]" />
-                    )}
+
+                  {/* Mode 2: Discovery Only (Collect) */}
+                  <div
+                    onClick={() => handleUpdateActiveSchedule('action_mode', 'collect_only')}
+                    className={`p-2.5 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 min-h-[112px] ${
+                      activeSchedule.action_mode === 'collect_only'
+                        ? 'border-amber-500/80 bg-amber-50/50 dark:bg-amber-500/10 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                            2
+                          </div>
+                          <span className="text-[11.5px] font-bold text-slate-900 dark:text-slate-100">
+                            Discovery Only
+                          </span>
+                        </div>
+                        {activeSchedule.action_mode === 'collect_only' && (
+                          <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 stroke-[2.5]" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug mt-1.5">
+                        Discover fresh jobs and save to records as "Not Applied" to review before applying.
+                      </p>
+                    </div>
+                    <div className="mt-auto pt-1">
+                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                        Collect Without Applying
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Mode 3: Apply Selected Jobs */}
+                  <div
+                    onClick={() => {
+                      handleUpdateActiveSchedule('action_mode', 'selected_jobs');
+                      setIsJobSelectModalOpen(true);
+                    }}
+                    className={`p-2.5 rounded-lg border transition cursor-pointer flex flex-col justify-between gap-2 min-h-[112px] ${
+                      activeSchedule.action_mode === 'selected_jobs'
+                        ? 'border-emerald-500/80 bg-emerald-50/50 dark:bg-emerald-500/10 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                            3
+                          </div>
+                          <span className="text-[11.5px] font-bold text-slate-900 dark:text-slate-100">
+                            Apply Selected
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                            {(activeSchedule.selected_jobs || []).length}
+                          </span>
+                          {activeSchedule.action_mode === 'selected_jobs' && (
+                            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 stroke-[2.5]" />
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug mt-1.5">
+                        Apply only to unapplied jobs selected in your queue.
+                      </p>
+                    </div>
+                    <div className="mt-auto pt-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUpdateActiveSchedule('action_mode', 'selected_jobs');
+                          setIsJobSelectModalOpen(true);
+                        }}
+                        className="w-full text-[10.5px] font-bold py-1 px-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      >
+                        <Layers className="w-3 h-3" />
+                        <span>Select Jobs ({(activeSchedule.selected_jobs || []).length})</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug">
-                  Set time &rarr; Select unapplied jobs (filtered by Date & Platform) &rarr; Apply at scheduled time.
-                </p>
+              </div>
+
+              {/* Bottom Routine Actions: Delete Routine */}
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <span className="text-[11px] text-slate-400">
+                  Editing routine: <strong className="text-slate-700 dark:text-slate-200">{activeSchedule.name}</strong>
+                </span>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateConfigValue('scheduler_action_mode', 'selected_jobs');
-                    setIsJobSelectModalOpen(true);
-                  }}
-                  className="mt-1 text-[11px] font-bold py-1 px-2.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs"
+                  onClick={(e) => handleDeleteSchedule(activeSchedule.id, e)}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
                 >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Select / Filter Jobs ({(config.scheduled_selected_jobs || []).length})</span>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete This Routine</span>
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* 4-Stage Automated Pipeline Visualizer & Stage Controls */}
-          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2 mt-3">
-            <div className="flex items-center justify-between">
+          ) : (
+            <div className="py-10 text-center space-y-3">
+              <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto">
+                <Calendar className="w-5 h-5" />
+              </div>
               <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
-                  Autonomous Pipeline Actions
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  Automate both or select individual stages based on your workflow
-                </span>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">No Routine Selected</h3>
+                <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                  Select a routine from the list or create a new scheduler to configure days and times.
+                </p>
               </div>
-              <span className="text-[10.5px] font-semibold text-blue-600 dark:text-blue-400">
-                {config.automate_discovery !== false && config.automate_apply !== false
-                  ? 'All Stages Enabled'
-                  : config.automate_discovery !== false
-                  ? 'Discovery Only'
-                  : config.automate_apply !== false
-                  ? 'Auto-Apply Only'
-                  : 'All Stages Paused'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* Stage 1: Job Discovery (Toggleable) */}
-              <div
-                className={`p-2.5 rounded-[6px] border transition flex items-center justify-between gap-2.5 ${
-                  config.automate_discovery !== false
-                    ? 'border-blue-200 dark:border-blue-500/30 bg-blue-50/40 dark:bg-blue-500/10'
-                    : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 opacity-70'
-                }`}
+              <button
+                type="button"
+                onClick={handleCreateNewSchedule}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[6px] bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-5 h-5 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0 ${
-                      config.automate_discovery !== false
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
-                    }`}
-                  >
-                    1
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">
-                      Job Discovery
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                      Crawls matching job targets & ATS postings
-                    </div>
-                  </div>
-                </div>
-
-                <label className="relative inline-flex items-center cursor-pointer shrink-0" title="Toggle Job Discovery">
-                  <input
-                    type="checkbox"
-                    checked={config.automate_discovery !== false}
-                    onChange={async (e) => {
-                      const val = e.target.checked;
-                      updateConfigValue('automate_discovery', val);
-                      await handleSaveConfig({ ...config, automate_discovery: val }, true);
-                      showToast(val ? 'Job Discovery enabled in pipeline' : 'Job Discovery disabled in pipeline', 'info');
-                    }}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-8 h-4.5 rounded-full transition-colors duration-200 relative shadow-inner ${
-                      config.automate_discovery !== false ? 'bg-[#16a34a] !bg-[#16a34a]' : 'bg-slate-300 dark:bg-slate-700'
-                    }`}
-                    style={{ backgroundColor: config.automate_discovery !== false ? '#16a34a' : undefined }}
-                  >
-                    <div
-                      className={`absolute top-[1.5px] w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md ${
-                        config.automate_discovery !== false ? 'translate-x-[15px]' : 'translate-x-[1.5px]'
-                      }`}
-                    />
-                  </div>
-                </label>
-              </div>
-
-              {/* Stage 2: Auto-Apply (Toggleable - Work for collected jobs) */}
-              <div
-                className={`p-2.5 rounded-[6px] border transition flex items-center justify-between gap-2.5 ${
-                  config.automate_apply !== false
-                    ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-500/10'
-                    : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40 opacity-70'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`w-5 h-5 rounded-full font-bold text-[10px] flex items-center justify-center shrink-0 ${
-                      config.automate_apply !== false
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
-                    }`}
-                  >
-                    2
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">
-                      Auto-Apply
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                      Work for collected jobs & submit resume
-                    </div>
-                  </div>
-                </div>
-
-                <label className="relative inline-flex items-center cursor-pointer shrink-0" title="Toggle Auto-Apply">
-                  <input
-                    type="checkbox"
-                    checked={config.automate_apply !== false}
-                    onChange={async (e) => {
-                      const val = e.target.checked;
-                      updateConfigValue('automate_apply', val);
-                      await handleSaveConfig({ ...config, automate_apply: val }, true);
-                      showToast(val ? 'Auto-Apply enabled in pipeline' : 'Auto-Apply disabled in pipeline', 'info');
-                    }}
-                    className="sr-only"
-                  />
-                  <div
-                    className={`w-8 h-4.5 rounded-full transition-colors duration-200 relative shadow-inner ${
-                      config.automate_apply !== false ? 'bg-[#16a34a] !bg-[#16a34a]' : 'bg-slate-300 dark:bg-slate-700'
-                    }`}
-                    style={{ backgroundColor: config.automate_apply !== false ? '#16a34a' : undefined }}
-                  >
-                    <div
-                      className={`absolute top-[1.5px] w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md ${
-                        config.automate_apply !== false ? 'translate-x-[15px]' : 'translate-x-[1.5px]'
-                      }`}
-                    />
-                  </div>
-                </label>
-              </div>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Schedule Routine</span>
+              </button>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Right Column: Scheduled Task Details & Execution Queue */}
+        {/* Right Column: Scheduled Tasks & Execution Queue */}
         <div className="bg-white dark:bg-slate-900 rounded-[8px] border border-slate-200/90 dark:border-slate-800 p-4 shadow-xs space-y-3">
-          {/* Card Header */}
+          {/* Card Header with Add Schedule button */}
           <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Scheduled Tasks & Execution Queue ({scheduledTimes.length})
+                Scheduled Tasks & Execution Queue ({schedules.length})
               </h3>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-400">Daemon: Every 20s</span>
-              <span
-                className={`px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold border ${
-                  config.scheduler_enabled !== false
-                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
-                }`}
+              <button
+                type="button"
+                onClick={handleCreateNewSchedule}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] bg-blue-600 hover:bg-blue-700 text-white text-[10.5px] font-bold shadow-2xs transition cursor-pointer"
               >
-                {config.scheduler_enabled !== false ? 'Daemon Active' : 'Daemon Paused'}
-              </span>
+                <Plus className="w-3 h-3" />
+                <span>+ Add Schedule</span>
+              </button>
             </div>
           </div>
 
-          {/* List of Scheduled Cards — Rendered dynamically per scheduled time */}
+          {/* List of Scheduled Routines */}
           <div className="space-y-2.5">
-            {scheduledTimes.length === 0 ? (
-              <div className="p-4 rounded-[8px] border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-                No scheduled execution times configured. Add a time on the left to queue runs.
+            {schedules.length === 0 ? (
+              <div className="p-6 rounded-[8px] border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-2">
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  No scheduled execution routines configured.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Click "+ Add Schedule" above to create an automated job routine.
+                </p>
               </div>
             ) : (
-              scheduledTimes.map((t) => {
-                const scheduleTitle = (config.schedule_name || config.task_name || '').trim() || 'Daily Pipeline';
-                const isDiscoveryOn = config.automate_discovery !== false;
-                const isApplyOn = config.automate_apply !== false;
+              schedules.map((sched) => {
+                const isSelected = sched.id === activeScheduleId;
+                const isSchedOneTime = sched.frequency === 'onetime';
+                const isSchedEveryday = sched.frequency === 'everyday';
+                const isSchedWeekdays = sched.frequency === 'weekdays';
 
                 return (
                   <div
-                    key={t}
-                    className="p-3.5 rounded-[8px] border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 transition hover:border-blue-400 dark:hover:border-blue-500/40 shadow-xs space-y-2"
+                    key={sched.id}
+                    onClick={() => setSelectedScheduleId(sched.id)}
+                    className={`p-3.5 rounded-[8px] border transition cursor-pointer shadow-xs space-y-2 ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-500/10 ring-1 ring-blue-500/40'
+                        : 'border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
                   >
-                    {/* Top Row: Schedule Name | 🕒 9:40 PM + [Active Pipeline Actions Only] + Delete Button */}
                     <div className="flex items-center justify-between gap-2.5 flex-wrap">
                       <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        {/* Status dot / checkbox */}
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleScheduleEnabled(sched.id, e)}
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center transition cursor-pointer ${
+                            sched.enabled !== false
+                              ? 'bg-emerald-500 border-emerald-600 text-white'
+                              : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600'
+                          }`}
+                          title={sched.enabled !== false ? 'Routine active (click to pause)' : 'Routine paused (click to activate)'}
+                        >
+                          {sched.enabled !== false && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </button>
+
                         <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-                          {scheduleTitle}
+                          {sched.name}
                         </span>
                         <span className="text-sm font-bold text-slate-400 dark:text-slate-500 select-none">
                           |
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingWatchTime(t);
-                            setIsScheduleModalOpen(true);
-                          }}
-                          className="flex items-center gap-1.5 text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                          title="Click to change execution time"
-                        >
+                        <span className="flex items-center gap-1 text-sm font-bold text-blue-600 dark:text-blue-400">
                           <Clock className="w-3.5 h-3.5 stroke-[2.2]" />
-                          <span>{format12h(t)}</span>
-                        </button>
+                          <span>{format12h(sched.time)}</span>
+                        </span>
                       </div>
 
-                      {/* Execution Mode & Pipeline Actions */}
                       <div className="flex items-center gap-2 shrink-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {config.scheduler_action_mode === 'selected_jobs' ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
-                                <Layers className="w-3 h-3" />
-                                Mode 2: {(config.scheduled_selected_jobs || []).length} Jobs Queued
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setIsJobSelectModalOpen(true)}
-                                className="text-[10.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                              >
-                                Edit Queue
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">
-                                <Sparkles className="w-3 h-3" />
-                                Mode 1: Fetch & Apply
-                              </span>
-                              {isDiscoveryOn && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  Discovery
-                                </span>
-                              )}
-                              {isApplyOn && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[4px] text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  Auto-Apply
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
+                        {/* Mode Badge */}
+                        {sched.action_mode === 'selected_jobs' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
+                            <Layers className="w-3 h-3" />
+                            Mode 3: {(sched.selected_jobs || []).length} Jobs
+                          </span>
+                        ) : sched.action_mode === 'collect_only' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+                            <Search className="w-3 h-3" />
+                            Mode 2: Discovery
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10.5px] font-bold bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30">
+                            <Sparkles className="w-3 h-3" />
+                            Mode 1: Fetch & Apply
+                          </span>
+                        )}
 
+                        {/* DELETE BUTTON: Free deletion, no restrictions */}
                         <button
                           type="button"
-                          onClick={() => handleRemoveTime(t)}
+                          onClick={(e) => handleDeleteSchedule(sched.id, e)}
                           className="w-7 h-7 rounded-[5px] border border-slate-200 dark:border-slate-800 hover:border-rose-400 dark:hover:border-rose-500/50 hover:bg-rose-50 dark:hover:bg-rose-500/10 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer flex items-center justify-center shrink-0 shadow-2xs"
-                          title={`Delete scheduled run at ${format12h(t)}`}
+                          title="Delete this schedule routine"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
 
-                    {/* Subtitle with Frequency */}
-                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                      {isOneTime
-                        ? `One-Time execution set for ${formattedSelectedDate}`
-                        : isEveryDay
-                        ? 'Daily routine set for Monday to Sunday'
-                        : isWeekdaysOnly
-                        ? 'Weekdays routine set for Monday to Friday'
-                        : `Runs on ${activeDays.map((d) => d.toUpperCase()).join(', ')}`}
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                      <span>
+                        {isSchedOneTime
+                          ? `One-Time on ${sched.date || 'Scheduled Date'}`
+                          : isSchedEveryday
+                          ? 'Daily (Monday to Sunday)'
+                          : isSchedWeekdays
+                          ? 'Weekdays (Monday to Friday)'
+                          : `Days: ${(sched.days || []).map((d) => d.toUpperCase()).join(', ')}`}
+                      </span>
+                      {isSelected ? (
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                          Editing in Form &larr;
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 group-hover:text-slate-600">
+                          Click to edit
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
               })
             )}
           </div>
-        </div>
         </div>
       </div>
 
@@ -1328,15 +1055,15 @@ export default function SchedulerPage() {
       <CalendarModal
         isOpen={isCalendarModalOpen}
         onClose={() => setIsCalendarModalOpen(false)}
-        selectedDate={config.scheduler_date || new Date().toISOString().split('T')[0]}
+        selectedDate={activeSchedule?.date || new Date().toISOString().split('T')[0]}
         onSelectDate={handleCalendarDateSelect}
       />
 
-      {/* Mode 2: Scheduled Unapplied Job Selection Modal (with Date & Platform filters) */}
+      {/* Mode 2: Scheduled Unapplied Job Selection Modal */}
       <ScheduledJobSelectModal
         isOpen={isJobSelectModalOpen}
         onClose={() => setIsJobSelectModalOpen(false)}
-        selectedJobIds={config.scheduled_selected_jobs || []}
+        selectedJobIds={activeSchedule?.selected_jobs || []}
         onSaveSelection={handleSaveJobSelection}
         onApplyNow={handleApplySelectedJobsNow}
       />

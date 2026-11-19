@@ -589,7 +589,7 @@ export default function SettingsPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <PlatformLogo id={plat.id} className="w-6 h-6 rounded-[5px]" />
+                        <PlatformLogo id={plat.id} className="w-6 h-6 rounded-[3px]" />
                         <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
                           {plat.name}
                         </span>
@@ -1117,7 +1117,7 @@ export default function SettingsPage() {
                         #{idx + 1}
                       </span>
 
-                      <PlatformLogo id={platObj.id} className="w-6 h-6 rounded-md shrink-0" />
+                      <PlatformLogo id={platObj.id} className="w-6 h-6 rounded-[3px] shrink-0" />
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
