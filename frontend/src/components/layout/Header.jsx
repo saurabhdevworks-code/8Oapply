@@ -48,24 +48,24 @@ export default function Header() {
   return (
     <header className="h-14 bg-white border-b border-slate-200 sticky top-0 z-20 px-6 flex items-center justify-between shadow-xs w-full max-w-full min-w-0">
       <div>
-        <h1 className="text-sm font-bold text-slate-900 tracking-tight">{title}</h1>
+        <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">{title}</h1>
       </div>
 
       <div className="flex items-center gap-2.5">
-        {/* Standalone Circular Theme Toggle Button (Guaranteed 100% Perfect Circle) */}
+        {/* Standalone Circular Theme Toggle Button (Sized to match inner profile circle: 34px) */}
         <button
           type="button"
           onClick={cycleTheme}
           title={`Active Theme: ${theme === 'dark' ? 'Midnight Dark' : theme === 'indigo' ? 'Deep Ocean Indigo' : 'Clean Slate Light'}. Click to switch.`}
           style={{ borderRadius: '50%' }}
-          className="btn-circle w-11 h-11 aspect-square rounded-full bg-white border border-slate-200/90 shadow-xs hover:bg-slate-50 transition flex items-center justify-center cursor-pointer shrink-0"
+          className="btn-circle w-[34px] h-[34px] aspect-square rounded-full bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer shrink-0"
         >
           {theme === 'dark' ? (
-            <Moon className="w-4 h-4 text-amber-400" />
+            <Moon className="w-3.5 h-3.5 text-amber-400" />
           ) : theme === 'indigo' ? (
-            <Palette className="w-4 h-4 text-indigo-500" />
+            <Palette className="w-3.5 h-3.5 text-indigo-500" />
           ) : (
-            <Sun className="w-4 h-4 text-amber-500" />
+            <Sun className="w-3.5 h-3.5 text-amber-500" />
           )}
         </button>
 
@@ -76,7 +76,7 @@ export default function Header() {
               type="button"
               onClick={() => setDropdownOpen((prev) => !prev)}
               style={{ borderRadius: '9999px' }}
-              className="pill-capsule rounded-full h-11 pl-1.5 pr-6 bg-white border border-slate-200/90 shadow-xs hover:border-slate-300 transition cursor-pointer select-none flex items-center gap-2.5 text-left"
+              className="pill-capsule rounded-full h-11 pl-1.5 pr-6 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition cursor-pointer select-none flex items-center gap-2.5 text-left"
             >
               {/* Concentric Grey Circle Avatar */}
               <div
@@ -88,10 +88,10 @@ export default function Header() {
 
               {/* Name & Email Block */}
               <div className="flex flex-col text-left leading-tight min-w-0 pr-1">
-                <span className="text-xs font-bold text-slate-900 tracking-tight truncate max-w-[150px]">
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight truncate max-w-[150px]">
                   {user.name || 'User'}
                 </span>
-                <span className="text-[10px] text-slate-500 font-normal tracking-tight truncate max-w-[170px]">
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal tracking-tight truncate max-w-[170px]">
                   {user.email}
                 </span>
               </div>
@@ -101,14 +101,14 @@ export default function Header() {
             {dropdownOpen && (
               <div
                 style={{ borderRadius: '16px' }}
-                className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200/90 shadow-xl p-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
+                className="absolute right-0 top-full mt-2 w-48 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xl p-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150"
               >
                 {/* Settings Link */}
                 <Link
                   to="/settings"
                   onClick={() => setDropdownOpen(false)}
                   style={{ borderRadius: '10px' }}
-                  className="flex items-center gap-3 px-3 py-2 text-xs font-semibold text-slate-800 hover:text-slate-950 hover:bg-slate-100/80 transition cursor-pointer"
+                  className="flex items-center gap-3 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800 transition cursor-pointer"
                 >
                   <Settings className="w-4 h-4 text-slate-700 stroke-[2.2]" />
                   <span>Settings</span>
@@ -122,7 +122,7 @@ export default function Header() {
                     logout();
                   }}
                   style={{ borderRadius: '10px' }}
-                  className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-slate-800 hover:text-rose-600 hover:bg-rose-50/80 transition cursor-pointer text-left"
+                  className="w-full flex items-center gap-3 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50/80 dark:hover:bg-rose-950/30 transition cursor-pointer text-left"
                 >
                   <LogOut className="w-4 h-4 text-slate-700 stroke-[2.2]" />
                   <span>Logout</span>
