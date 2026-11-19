@@ -22,11 +22,13 @@ const LOGO_MAP = {
 
 export default function PlatformLogo({ id, name, className = "w-11 h-11", style }) {
   const key = (id || name || '').toLowerCase();
-  const radiusClass = className.includes('rounded') ? '' : 'rounded-[8px]';
+    // Clean, unified reduced border-radius (3px) everywhere
+  const cleanClassName = className.replace(/\brounded(-[a-z0-9\[\]]+)?\b/g, '').trim();
+  const radiusClass = 'rounded-[3px]';
 
   if (key === 'others' || key === 'google') {
     return (
-      <div style={style} className={`${className} shrink-0 ${radiusClass} bg-white border border-slate-200 dark:border-slate-800 p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
+      <div style={style} className={`${cleanClassName} shrink-0 ${radiusClass} bg-white border border-slate-200 dark:border-slate-800 p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
         <svg viewBox="0 0 24 24" className="w-full h-full" fill="none">
           <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
           <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
@@ -39,7 +41,7 @@ export default function PlatformLogo({ id, name, className = "w-11 h-11", style 
 
   if (key === 'gmail') {
     return (
-      <div style={style} className={`${className} shrink-0 ${radiusClass} bg-white border border-slate-200 dark:border-slate-800 p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
+      <div style={style} className={`${cleanClassName} shrink-0 ${radiusClass} bg-white border border-slate-200 dark:border-slate-800 p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
         <svg viewBox="0 49.4 512 399.42" className="w-full h-full">
           <path fill="#4285F4" d="M34.91 448.818h81.454V251L0 163.727V413.91c0 19.287 15.622 34.91 34.91 34.91z" />
           <path fill="#34A853" d="M395.636 448.818h81.455c19.287 0 34.909-15.622 34.909-34.909V163.727L395.636 251z" />
@@ -53,7 +55,7 @@ export default function PlatformLogo({ id, name, className = "w-11 h-11", style 
 
   if (key === 'wellfound') {
     return (
-      <div style={style} className={`${className} shrink-0 ${radiusClass} bg-black p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
+      <div style={style} className={`${cleanClassName} shrink-0 ${radiusClass} bg-black p-1 flex items-center justify-center shadow-xs overflow-hidden`}>
         <img
           src={wellfoundLogo}
           alt="Wellfound"
@@ -70,13 +72,13 @@ export default function PlatformLogo({ id, name, className = "w-11 h-11", style 
         src={src}
         alt={key}
         style={style}
-        className={`${className} shrink-0 ${radiusClass} object-cover shadow-xs`}
+        className={`${cleanClassName} shrink-0 ${radiusClass} object-cover shadow-xs`}
       />
     );
   }
 
   return (
-    <div style={style} className={`${className} shrink-0 ${radiusClass} bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs`}>
+    <div style={style} className={`${cleanClassName} shrink-0 ${radiusClass} bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs`}>
       {(key || 'JB').substring(0, 2).toUpperCase()}
     </div>
   );

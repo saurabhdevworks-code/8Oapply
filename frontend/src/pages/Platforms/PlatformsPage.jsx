@@ -445,7 +445,7 @@ export default function PlatformsPage() {
                       >
                         <GripVertical className="w-3.5 h-3.5" />
                       </div>
-                      <PlatformLogo id={plat.id} className="w-9 h-9 shrink-0" />
+                      <PlatformLogo id={plat.id} className="w-9 h-9 rounded-[3px] shrink-0" />
                       <div>
                         <div className="flex items-center gap-1.5">
                           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-none">
@@ -636,7 +636,7 @@ export default function PlatformsPage() {
                   >
                     <GripVertical className="w-3.5 h-3.5" />
                   </div>
-                  <PlatformLogo id={plat.id} className="w-7 h-7 shrink-0" />
+                  <PlatformLogo id={plat.id} className="w-7 h-7 rounded-[3px] shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">

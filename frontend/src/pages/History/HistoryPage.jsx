@@ -767,8 +767,7 @@ export default function HistoryPage() {
                       <div className="flex items-center gap-1.5">
                         <PlatformLogo
                           id={(job.platform || 'indeed').toLowerCase()}
-                          className="w-3.5 h-3.5 rounded-[1px]"
-                          style={{ borderRadius: '1px' }}
+                          className="w-3.5 h-3.5 rounded-[3px]"
                         />
                         <span className="font-semibold text-neutral-200 capitalize text-xs">
                           {job.platform || 'Unknown'}
@@ -1031,7 +1030,7 @@ export default function HistoryPage() {
               <div className="flex items-start gap-3 min-w-0">
                 <PlatformLogo
                   id={(selectedDescModalJob.platform || 'indeed').toLowerCase()}
-                  className="w-10 h-10 rounded-xl mt-0.5 shrink-0"
+                  className="w-10 h-10 rounded-[3px] mt-0.5 shrink-0"
                 />
                 <div className="min-w-0">
                   <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">

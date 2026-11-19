@@ -267,7 +267,7 @@ export default function DashboardPage() {
               {platformFilter === 'all' ? (
                 <Globe2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
               ) : (
-                <PlatformLogo id={platformFilter} className="w-4 h-4 rounded-[2px] shrink-0" />
+                <PlatformLogo id={platformFilter} className="w-4 h-4 rounded-[3px] shrink-0" />
               )}
               <span>
                 {platformFilter === 'all'
@@ -323,7 +323,7 @@ export default function DashboardPage() {
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <PlatformLogo id={plat.id} className="w-4 h-4 rounded-[2px] shrink-0" />
+                          <PlatformLogo id={plat.id} className="w-4 h-4 rounded-[3px] shrink-0" />
                           <span>{plat.name}</span>
                         </div>
                         {isSelected && (
@@ -516,7 +516,7 @@ export default function DashboardPage() {
 
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-1.5">
-                            <PlatformLogo id={platId} className="w-4 h-4 shrink-0 rounded-[2px]" />
+                            <PlatformLogo id={platId} className="w-4 h-4 shrink-0 rounded-[3px]" />
                             <span className="font-semibold text-slate-700 dark:text-slate-200 capitalize text-xs">
                               {job.platform}
                             </span>
