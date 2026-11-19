@@ -40,8 +40,8 @@
   "delay_min": 15,
   "delay_max": 28,
   "page_load_wait": 10,
-  "platform_rest_min": 60,
-  "platform_rest_max": 120,
+  "platform_rest_min": 5,
+  "platform_rest_max": 10,
   "headless": false,
   "manual_login_wait": 45,
   "browser": "auto",
@@ -54,9 +54,9 @@
   "use_foundit": false,
   "use_timesjobs": false,
   "use_wellfound": false,
-  "scheduler_enabled": false,
+  "scheduler_enabled": true,
   "scheduled_times": [
-    "23:52"
+    "17:25"
   ],
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 587,
@@ -96,8 +96,8 @@
   "imap_host": "imap.gmail.com",
   "imap_port": 993,
   "gmail_connected": false,
-  "use_others": false,
-  "connected_others": false,
+  "use_others": true,
+  "connected_others": true,
   "custom_answers": {},
   "linkedin": "",
   "github": "",
@@ -125,17 +125,18 @@
     "sun"
   ],
   "scheduler_mode": "onetime",
-  "scheduler_date": "2026-11-18",
+  "scheduler_date": "2026-11-19",
   "master_score": "",
   "bachelor_score": "",
   "automate_discovery": false,
-  "schedule_name": "",
+  "schedule_name": "Scheduled Routine 1",
   "task_name": "",
   "auth_google_others": false,
   "others_email": "",
   "others_password": "",
   "platform_priority": [
     "use_indeed",
+    "use_others",
     "use_linkedin",
     "use_naukri",
     "use_glassdoor",
@@ -143,9 +144,45 @@
     "use_shine",
     "use_foundit",
     "use_timesjobs",
-    "use_wellfound",
-    "use_others"
+    "use_wellfound"
   ],
   "scheduler_action_mode": "selected_jobs",
-  "scheduled_selected_jobs": []
+  "scheduled_selected_jobs": [],
+  "automate_apply": true,
+  "platform_priority_order": [
+    "indeed",
+    "others",
+    "linkedin",
+    "naukri",
+    "glassdoor",
+    "internshala",
+    "shine",
+    "foundit",
+    "timesjobs",
+    "wellfound"
+  ],
+  "schedules": [
+    {
+      "id": "sched_1",
+      "name": "Daily Pipeline",
+      "time": "17:25",
+      "frequency": "onetime",
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+      ],
+      "date": "2026-11-19",
+      "action_mode": "selected_jobs",
+      "enabled": false,
+      "selected_jobs": [
+        "others-1949adefb8f7",
+        "others-97240de6a3db"
+      ]
+    }
+  ]
 }

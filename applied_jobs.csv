@@ -1,17 +1,39 @@
-date,platform,job_title,company,job_id,url,status
-2026-11-18 16:15,Indeed,Backend Developer,Hack2skill,fdbc92d0777a5e75,https://in.indeed.com/viewjob?jk=fdbc92d0777a5e75,Not Applied
-2026-11-18 16:15,Indeed,Node JS Developer,FlexiEle,356ea3dcf996d171,https://in.indeed.com/viewjob?jk=356ea3dcf996d171,Not Applied
-2026-11-18 16:15,Indeed,Software Engineer,AppSuccessor Media,cbc856688dc5673b,https://in.indeed.com/viewjob?jk=cbc856688dc5673b,Not Applied
-2026-11-18 16:15,Indeed,Backend Developer,Actolap,a94709fad5b3a334,https://in.indeed.com/viewjob?jk=a94709fad5b3a334,Not Applied
-2026-11-18 16:15,Indeed,Backend - Software Engineer (LLMOps),Paytm,33ffb504e7bac778,https://in.indeed.com/viewjob?jk=33ffb504e7bac778,Not Applied
-2026-11-18 16:15,Indeed,Backend - Software Engineer (LLMOps),Paytm,cdef0123456789ab,https://in.indeed.com/viewjob?jk=cdef0123456789ab,Not Applied
-2026-11-18 16:15,Indeed,Python Developer,Technoarch Softwares,dbbbc9aa04b5269d,https://in.indeed.com/viewjob?jk=dbbbc9aa04b5269d,Not Applied
-2026-11-18 16:15,Indeed,Node.js Developer,Webkype,0e29499239c0b74b,https://in.indeed.com/viewjob?jk=0e29499239c0b74b,Not Applied
-2026-11-18 16:15,Indeed,Node.js Developer in Noida,Css Founder,822a5f33a3596b1a,https://in.indeed.com/viewjob?jk=822a5f33a3596b1a,Not Applied
-2026-11-18 16:15,Indeed,MERN Stack Developer,AppCurators,5ba75f31a743ef7c,https://in.indeed.com/viewjob?jk=5ba75f31a743ef7c,Not Applied
-2026-11-18 16:15,Indeed,Backend Engineer – Python,ileadHR Career,ebe9ddc3421bcb3e,https://in.indeed.com/viewjob?jk=ebe9ddc3421bcb3e,Not Applied
-2026-11-18 16:15,Indeed,Full Stack Developer Intern,Suretek Infosoft,43f9cd3e3999e84e,https://in.indeed.com/viewjob?jk=43f9cd3e3999e84e,Not Applied
-2026-11-18 16:15,Indeed,Python Full Stack Developer,CSG Technosol,b6ad702f872b90e9,https://in.indeed.com/viewjob?jk=b6ad702f872b90e9,Not Applied
-2026-11-18 16:15,Indeed,Backend Developer,Clara Edtech,e0ab458c4d4f8440,https://in.indeed.com/viewjob?jk=e0ab458c4d4f8440,Not Applied
-2026-11-18 16:17,Indeed,Java Backend and Microservices Developer,Siemens,ba0f3aa3531152f9,https://in.indeed.com/viewjob?jk=ba0f3aa3531152f9,Not Applied
-2026-11-18 16:17,Indeed,Software Engineer - Python,Flexsin,799fcfabdcb18a44,https://in.indeed.com/viewjob?jk=799fcfabdcb18a44,Not Applied
+date,platform,job_title,company,job_id,url,status,description
+2026-11-18 16:15,Indeed,Backend Developer,Hack2skill,fdbc92d0777a5e75,https://in.indeed.com/viewjob?jk=fdbc92d0777a5e75,Not Applied,
+2026-11-18 16:15,Indeed,Node JS Developer,FlexiEle,356ea3dcf996d171,https://in.indeed.com/viewjob?jk=356ea3dcf996d171,Not Applied,
+2026-11-18 16:15,Indeed,Software Engineer,AppSuccessor Media,cbc856688dc5673b,https://in.indeed.com/viewjob?jk=cbc856688dc5673b,Not Applied,
+2026-11-18 16:15,Indeed,Backend Developer,Actolap,a94709fad5b3a334,https://in.indeed.com/viewjob?jk=a94709fad5b3a334,Not Applied,
+2026-11-18 16:15,Indeed,Backend - Software Engineer (LLMOps),Paytm,33ffb504e7bac778,https://in.indeed.com/viewjob?jk=33ffb504e7bac778,Not Applied,
+2026-11-18 16:15,Indeed,Backend - Software Engineer (LLMOps),Paytm,cdef0123456789ab,https://in.indeed.com/viewjob?jk=cdef0123456789ab,Not Applied,
+2026-11-18 16:15,Indeed,Python Developer,Technoarch Softwares,dbbbc9aa04b5269d,https://in.indeed.com/viewjob?jk=dbbbc9aa04b5269d,Not Applied,
+2026-11-18 16:15,Indeed,Node.js Developer,Webkype,0e29499239c0b74b,https://in.indeed.com/viewjob?jk=0e29499239c0b74b,Not Applied,
+2026-11-18 16:15,Indeed,Node.js Developer in Noida,Css Founder,822a5f33a3596b1a,https://in.indeed.com/viewjob?jk=822a5f33a3596b1a,Not Applied,
+2026-11-18 16:15,Indeed,MERN Stack Developer,AppCurators,5ba75f31a743ef7c,https://in.indeed.com/viewjob?jk=5ba75f31a743ef7c,Not Applied,
+2026-11-18 16:15,Indeed,Backend Engineer – Python,ileadHR Career,ebe9ddc3421bcb3e,https://in.indeed.com/viewjob?jk=ebe9ddc3421bcb3e,Not Applied,
+2026-11-18 16:15,Indeed,Full Stack Developer Intern,Suretek Infosoft,43f9cd3e3999e84e,https://in.indeed.com/viewjob?jk=43f9cd3e3999e84e,Not Applied,
+2026-11-18 16:15,Indeed,Python Full Stack Developer,CSG Technosol,b6ad702f872b90e9,https://in.indeed.com/viewjob?jk=b6ad702f872b90e9,Not Applied,"₹2,00,000 - ₹5,00,000 a year Full-time"
+2026-11-18 16:15,Indeed,Backend Developer,Clara Edtech,e0ab458c4d4f8440,https://in.indeed.com/viewjob?jk=e0ab458c4d4f8440,Not Applied,
+2026-11-18 16:17,Indeed,Java Backend and Microservices Developer,Siemens,ba0f3aa3531152f9,https://in.indeed.com/viewjob?jk=ba0f3aa3531152f9,Not Applied,
+2026-11-18 16:17,Indeed,Software Engineer - Python,Flexsin,799fcfabdcb18a44,https://in.indeed.com/viewjob?jk=799fcfabdcb18a44,Not Applied,
+2026-11-19 09:46,Indeed,Python Full Stack Developer,CSG Technosol,f1e2d3c4b5a67890,https://in.indeed.com/viewjob?jk=f1e2d3c4b5a67890,Not Applied,"₹2,00,000 - ₹5,00,000 a yearFull-time"
+2026-11-19 09:46,Indeed,Full Stack Developer,Mighty Warner Infoserve (OPC),1500af25fb18539a,https://in.indeed.com/viewjob?jk=1500af25fb18539a,Not Applied,"Up to ₹35,000 a month"
+2026-11-19 09:46,Indeed,.Net Fullstack React - Senior Engineer,Iris Software,0c293d235bcc243a,https://in.indeed.com/viewjob?jk=0c293d235bcc243a,Not Applied,
+2026-11-19 09:46,Indeed,PHP Web Developer,360 PropGuide LLP,5d9a806de949ab6a,https://in.indeed.com/viewjob?jk=5d9a806de949ab6a,Not Applied,"₹15,000 - ₹25,000 a month Full-time +1"
+2026-11-19 09:46,Indeed,Full Stack Developer,EidosVerse,d30eedebd575452a,https://in.indeed.com/viewjob?jk=d30eedebd575452a,Not Applied,"₹30,000 - ₹40,000 a month Full-time"
+2026-11-19 09:46,Indeed,MERN Stack Developer,Alobha,62e20ff62c681c80,https://in.indeed.com/viewjob?jk=62e20ff62c681c80,Not Applied,"₹20,000 - ₹40,000 a month Permanent"
+2026-11-19 09:46,Indeed,Web Developer,Debox Technology,300c6a60fb6c2455,https://in.indeed.com/viewjob?jk=300c6a60fb6c2455,Not Applied,"₹10,000 - ₹20,000 a month Full-time"
+2026-11-19 09:46,Indeed,Vue Js Frontend Developer,Kyndryl,f24cdae8dbc39fa6,https://in.indeed.com/viewjob?jk=f24cdae8dbc39fa6,Not Applied,Full-time
+2026-11-19 10:01,Indeed,Website Designer/Developer,Revive Digital,32ec630375f7b662,https://in.indeed.com/viewjob?jk=32ec630375f7b662,Not Applied,"₹12,000 - ₹18,000 a month Full-time"
+2026-11-19 10:35,Internshala,Full Stack Developer,Indian Institute Of Robotics,others-d8f6670f4df2,https://internshala.com/job/detail/full-stack-developer-job-in-noida-at-indian-institute-of-robotics1795004235,Not Applied,
+2026-11-19 10:36,Indeed,"Senior Software Engineer - Python, C, C++, Rust or GO",Optum,9b300d2cf20941c8,https://in.indeed.com/viewjob?jk=9b300d2cf20941c8,Not Applied,Full-time
+2026-11-19 10:36,Indeed,Software Engineer,Siemens,56c2393e6adaf237,https://in.indeed.com/viewjob?jk=56c2393e6adaf237,Not Applied,Full-time +1
+2026-11-19 10:36,Indeed,Software Development Engineer II,Clearwater Analytics India Private,7690d5e6d1aed7c7,https://in.indeed.com/viewjob?jk=7690d5e6d1aed7c7,Not Applied,Full-time
+2026-11-19 10:36,Indeed,Software Engineer,Infinite Computer,cea88945c374482e,https://in.indeed.com/viewjob?jk=cea88945c374482e,Not Applied,
+2026-11-19 10:36,Indeed,Senior Software Engineer,Thales,3788810f6ff03cfc,https://in.indeed.com/viewjob?jk=3788810f6ff03cfc,Not Applied,Full-time
+2026-11-19 10:36,Indeed,Senior Software Engineer - Frontend (Passkeys),Bitwarden,88344620e1de9f10,https://in.indeed.com/viewjob?jk=88344620e1de9f10,Not Applied,
+2026-11-19 10:36,Indeed,IN-Software Engineer II,R1 RCM,bcb023f40a0f17c9,https://in.indeed.com/viewjob?jk=bcb023f40a0f17c9,Not Applied,Full-time
+2026-11-19 10:36,Indeed,"Senior Software Engineer - Python, C, C++, Rust or GO",Optum,123456789abcdef0,https://in.indeed.com/viewjob?jk=123456789abcdef0,Not Applied,Full-time
+2026-11-19 10:37,Internshala,Software Developer,Mellow Vault,others-52be04e3f9bd,https://internshala.com/job/detail/fresher-software-developer-job-in-noida-at-mellow-vault1791657067,Not Applied,
+2026-11-19 10:37,Internshala,Software Developer,Marketome Technology Private,others-7af4b69a5aa7,https://internshala.com/job/detail/software-developer-job-in-multiple-locations-at-marketome-technology-private-limited1793104757,Not Applied,
+2026-11-19 10:37,Internshala,Software Developer,Tagjoy Consultants Private,others-97240de6a3db,https://internshala.com/job/detail/software-developer-job-in-multiple-locations-at-tagjoy-consultants-private-limited1792726383,Not Applied,
+2026-11-19 10:37,Internshala,Robotics Software Developer,Digital Surveillance Incorporation (aka DSI Robotics),others-1949adefb8f7,https://internshala.com/job/detail/robotics-software-developer-job-in-noida-at-digital-surveillance-incorporation-aka-dsi-robotics1779237024,Applied,

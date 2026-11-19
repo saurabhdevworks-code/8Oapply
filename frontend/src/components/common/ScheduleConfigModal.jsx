@@ -42,10 +42,17 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
   const [isJobSelectModalOpen, setIsJobSelectModalOpen] = useState(false);
   const [customTimeInput, setCustomTimeInput] = useState('');
   const [showAddCustomTime, setShowAddCustomTime] = useState(false);
+  const [editingChipTime, setEditingChipTime] = useState(null);
+  const [editingChipValue, setEditingChipValue] = useState('');
 
   if (!isOpen) return null;
 
-  const scheduledTimes = config.scheduled_times || ['09:30'];
+  const rawTimes = Array.isArray(config.scheduled_times)
+    ? config.scheduled_times
+    : config.scheduled_times
+    ? [config.scheduled_times]
+    : [];
+  const scheduledTimes = Array.from(new Set(rawTimes.filter(Boolean))).sort();
   const activeDays = config.scheduler_days || ['mon', 'tue', 'wed', 'thu', 'fri'];
   const cadenceMode = config.scheduler_mode || 'onetime';
   const selectedDateStr = config.scheduler_date || new Date().toISOString().split('T')[0];
@@ -85,20 +92,30 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
 
   const formattedSelectedDate = formatDateDisplay(selectedDateStr);
 
-  // Parse time
+  // Parse time flexibly (e.g. "5 PM", "5PM", "5:00 PM", "17:00", "5p", "17")
   const parseTimeTo24h = (str) => {
     if (!str) return null;
-    const s = str.trim();
-    const match = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
-    if (!match) return null;
-    let h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    const period = match[3] ? match[3].toLowerCase() : null;
-    if (m < 0 || m > 59) return null;
-    if (period === 'pm' && h < 12) h += 12;
-    if (period === 'am' && h === 12) h = 0;
-    if (h < 0 || h > 23) return null;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    const s = str.trim().toLowerCase();
+    // 12-hour format: "5 pm", "5pm", "5:00 pm", "5:30pm", "5p"
+    const match12 = s.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a|p)$/);
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = match12[2] ? parseInt(match12[2], 10) : 0;
+      const period = match12[3].startsWith('p') ? 'pm' : 'am';
+      if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+      if (period === 'pm' && h < 12) h += 12;
+      if (period === 'am' && h === 12) h = 0;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    // 24-hour format: "17:00", "17", "09:30"
+    const match24 = s.match(/^(\d{1,2})(?::(\d{1,2}))?$/);
+    if (match24) {
+      let h = parseInt(match24[1], 10);
+      const m = match24[2] ? parseInt(match24[2], 10) : 0;
+      if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    }
+    return null;
   };
 
   // Change cadence
@@ -134,38 +151,69 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
     await handleSaveConfig(newCfg, true);
   };
 
+  // Sync both scheduled_times and schedules
+  const updateTimesAndSchedules = async (nextTimes, toastMsg = null) => {
+    const updatedSchedules = nextTimes.map((t, idx) => ({
+      id: config.schedules?.[idx]?.id || `sched_${idx + 1}`,
+      name: config.schedules?.[idx]?.name || (nextTimes.length === 1 ? 'Daily Pipeline' : `Daily Pipeline ${idx + 1}`),
+      time: t,
+      frequency: config.scheduler_mode || 'everyday',
+      days: config.scheduler_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+      date: config.scheduler_date || new Date().toISOString().split('T')[0],
+      action_mode: config.scheduler_action_mode || 'fetch_and_apply',
+      enabled: true,
+      selected_jobs: config.scheduled_selected_jobs || [],
+    }));
+    const newCfg = {
+      ...config,
+      scheduled_times: nextTimes,
+      schedules: updatedSchedules,
+    };
+    updateConfigValue('scheduled_times', nextTimes);
+    updateConfigValue('schedules', updatedSchedules);
+    await handleSaveConfig(newCfg, true);
+    if (toastMsg) showToast(toastMsg, 'success');
+  };
+
   // Add preset time
   const handleAddPresetTime = async (time24) => {
     if (scheduledTimes.includes(time24)) return;
     const nextTimes = [...scheduledTimes, time24].sort();
-    const newCfg = { ...config, scheduled_times: nextTimes };
-    updateConfigValue('scheduled_times', nextTimes);
-    await handleSaveConfig(newCfg, true);
+    await updateTimesAndSchedules(nextTimes, `Scheduled time added for ${format12h(time24)}`);
   };
 
   // Remove time
   const handleRemoveTime = async (time24) => {
-    if (scheduledTimes.length <= 1) {
-      showToast('At least one execution time must remain configured', 'error');
-      return;
-    }
     const nextTimes = scheduledTimes.filter((t) => t !== time24);
-    const newCfg = { ...config, scheduled_times: nextTimes };
-    updateConfigValue('scheduled_times', nextTimes);
-    await handleSaveConfig(newCfg, true);
+    await updateTimesAndSchedules(nextTimes, 'Execution time removed');
   };
 
   // Add custom time
   const handleAddCustomTimeSubmit = async (e) => {
-    if (e) e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     const parsed = parseTimeTo24h(customTimeInput);
     if (!parsed) {
-      showToast('Please enter a valid time (e.g. 02:30 PM)', 'error');
+      showToast('Please enter a valid time (e.g. 5:00 PM or 5 PM)', 'error');
       return;
     }
     await handleAddPresetTime(parsed);
     setCustomTimeInput('');
     setShowAddCustomTime(false);
+  };
+
+  // Handle inline edit for an existing time chip
+  const handleSaveChipEdit = async (oldTime24, inputValue) => {
+    setEditingChipTime(null);
+    if (!inputValue) return;
+    const newTime24 = parseTimeTo24h(inputValue);
+    if (!newTime24) {
+      showToast('Please enter a valid time (e.g. 5:00 PM or 5 PM)', 'error');
+      return;
+    }
+    if (newTime24 === oldTime24) return;
+    let nextTimes = scheduledTimes.map((t) => (t === oldTime24 ? newTime24 : t));
+    nextTimes = Array.from(new Set(nextTimes)).sort();
+    await updateTimesAndSchedules(nextTimes, `Time updated to ${format12h(newTime24)}`);
   };
 
   // Calendar date select
@@ -187,14 +235,14 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
     let nextTimes = [time24];
     if (editingWatchTime && scheduledTimes.includes(editingWatchTime)) {
       nextTimes = scheduledTimes.map((t) => (t === editingWatchTime ? time24 : t));
-    } else if (!scheduledTimes.includes(time24)) {
-      nextTimes = [...scheduledTimes, time24].sort();
+    } else {
+      nextTimes = scheduledTimes.includes(time24) ? scheduledTimes : [...scheduledTimes, time24].sort();
     }
-    const newCfg = { ...config, scheduled_times: nextTimes };
-    updateConfigValue('scheduled_times', nextTimes);
-    await handleSaveConfig(newCfg, true);
+    await updateTimesAndSchedules(nextTimes, `Time set to ${format12h(time24)}`);
     setIsWatchModalOpen(false);
     setEditingWatchTime(null);
+    setShowAddCustomTime(false);
+    setCustomTimeInput('');
   };
 
   // Mode 2: Save job selection
@@ -291,17 +339,7 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
                 >
                   All 7 Days
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleSetFrequency('weekdays')}
-                  className={`px-2.5 py-1 rounded-[5px] text-xs font-semibold border transition cursor-pointer ${
-                    isWeekdaysOnly
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  Weekdays Only
-                </button>
+
               </div>
             </div>
 
@@ -326,26 +364,6 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
                   Change Date &rarr;
                 </span>
               </button>
-            ) : isWeekdaysOnly ? (
-              <div className="grid grid-cols-5 gap-1.5">
-                {DAYS_OF_WEEK.slice(0, 5).map((d) => {
-                  const isSelected = activeDays.includes(d.id);
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => handleToggleDay(d.id)}
-                      className={`py-1.5 rounded-md text-xs font-bold text-center border transition cursor-pointer ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-blue-500/15 border-blue-400 dark:border-blue-500/50 text-blue-700 dark:text-blue-400'
-                          : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:border-slate-300'
-                      }`}
-                    >
-                      {d.full}
-                    </button>
-                  );
-                })}
-              </div>
             ) : (
               <div className="grid grid-cols-7 gap-1">
                 {DAYS_OF_WEEK.map((d) => {
@@ -409,60 +427,114 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
                       setEditingWatchTime(t);
                       setIsWatchModalOpen(true);
                     }}
-                    className="text-blue-600 dark:text-blue-400 hover:scale-110 transition cursor-pointer"
+                    className="w-5 h-5 rounded-full bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-500/25 transition cursor-pointer shrink-0"
                     title="Change time on clock dial"
                   >
-                    <Clock className="w-3.5 h-3.5" />
+                    <Clock className="w-3 h-3" />
                   </button>
-                  <span
-                    onClick={() => {
-                      setEditingWatchTime(t);
-                      setIsWatchModalOpen(true);
-                    }}
-                    className="cursor-pointer hover:underline"
-                  >
-                    {format12h(t)}
-                  </span>
-                  {scheduledTimes.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTime(t)}
-                      className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer ml-1"
-                      title="Delete this execution time"
+                  {editingChipTime === t ? (
+                    <input
+                      type="text"
+                      value={editingChipValue}
+                      onChange={(e) => setEditingChipValue(e.target.value)}
+                      onBlur={() => handleSaveChipEdit(t, editingChipValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveChipEdit(t, editingChipValue);
+                        } else if (e.key === 'Escape') {
+                          setEditingChipTime(null);
+                        }
+                      }}
+                      autoFocus
+                      className="w-[68px] text-xs font-bold text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 border border-blue-500 rounded px-1 py-0.5 focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      onClick={() => {
+                        setEditingChipTime(t);
+                        setEditingChipValue(format12h(t));
+                      }}
+                      className="cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                      title="Click to edit time directly"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      {format12h(t)}
+                    </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveTime(t)}
+                    className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer ml-1"
+                    title="Delete this execution time"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               ))}
 
-              {/* Add Custom Time Button or Input */}
+              {/* Add Time Button / In-place Interactive Time Chip */}
               {showAddCustomTime ? (
-                <form onSubmit={handleAddCustomTimeSubmit} className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-blue-400 rounded-md px-2 py-1 shadow-2xs">
+                <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-bold bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition">
+                  {/* Watch icon with light background */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingWatchTime(null);
+                      setIsWatchModalOpen(true);
+                    }}
+                    className="w-5 h-5 rounded-full bg-blue-50 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-500/25 transition cursor-pointer shrink-0"
+                    title="Open clock dial to pick time"
+                  >
+                    <Clock className="w-3 h-3" />
+                  </button>
+
+                  {/* Manually editable time input */}
                   <input
                     type="text"
                     value={customTimeInput}
                     onChange={(e) => setCustomTimeInput(e.target.value)}
                     placeholder="09:30 AM"
-                    className="w-20 text-xs font-bold text-slate-900 dark:text-slate-100 bg-transparent focus:outline-none"
                     autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomTimeSubmit();
+                      } else if (e.key === 'Escape') {
+                        setShowAddCustomTime(false);
+                      }
+                    }}
+                    className="w-[66px] text-xs font-bold text-slate-900 dark:text-slate-100 bg-transparent focus:outline-none"
                   />
-                  <button type="submit" className="text-blue-600 text-xs font-bold hover:underline">
+
+                  {/* Add button */}
+                  <button
+                    type="button"
+                    onClick={handleAddCustomTimeSubmit}
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700 text-xs font-bold hover:underline cursor-pointer"
+                    title="Save and add time"
+                  >
                     Add
                   </button>
+
+                  {/* Cancel button */}
                   <button
                     type="button"
                     onClick={() => setShowAddCustomTime(false)}
-                    className="text-slate-400 hover:text-slate-600 text-xs ml-1"
+                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition cursor-pointer p-0.5"
+                    title="Cancel"
                   >
-                    <X className="w-3 h-3" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                </form>
+                </div>
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowAddCustomTime(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-400 hover:text-blue-600 transition cursor-pointer"
+                  onClick={() => {
+                    setShowAddCustomTime(true);
+                    setCustomTimeInput('09:30 AM');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50/40 dark:hover:bg-blue-500/10 transition cursor-pointer"
+                  title="Add new scheduled execution time"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Time</span>
@@ -470,28 +542,7 @@ export default function ScheduleConfigModal({ isOpen, onClose }) {
               )}
             </div>
 
-            {/* Presets */}
-            <div className="flex flex-wrap gap-1.5 items-center pt-1">
-              <span className="text-[10px] text-slate-400 mr-1">Presets:</span>
-              {TIME_PRESETS.map((p) => {
-                const isSelected = scheduledTimes.includes(p.time24);
-                return (
-                  <button
-                    key={p.time24}
-                    type="button"
-                    onClick={() => handleAddPresetTime(p.time24)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition cursor-pointer ${
-                      isSelected
-                        ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-500/40'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
             </div>
-          </div>
 
           {/* 2-Way Scheduler Execution Modes (Mode 1 & Mode 2) */}
           <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
