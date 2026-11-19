@@ -218,11 +218,13 @@ def get_bot_progress() -> Dict[str, Any]:
                         current_target = f"{m_combo.group(3)} in {m_combo.group(4)}"
 
             if not current_platform:
-                m_plat = re.search(r"(?:Starting|Logged in via.*?|DONE.*?-.*?)\s+([A-Za-z]+)", line)
+                m_plat = re.search(r"═══\s*([A-Za-z]+)\s+Bot", line, re.IGNORECASE) or \
+                         re.search(r"(?:Starting|Logged in via.*?|DONE.*?-.*?)\s+([A-Za-z]+)", line) or \
+                         re.search(r"\b(Indeed|LinkedIn|Naukri|Glassdoor|Internshala|Shine|Foundit|TimesJobs|Wellfound|Others)\b(?=:|\s)", line, re.IGNORECASE)
                 if m_plat:
                     p_candidate = m_plat.group(1).capitalize()
-                    if p_candidate in ["Indeed", "Linkedin", "Naukri", "Glassdoor", "Internshala", "Shine", "Foundit", "Timesjobs", "Wellfound"]:
-                        current_platform = p_candidate
+                    if p_candidate.lower() in ["indeed", "linkedin", "naukri", "glassdoor", "internshala", "shine", "foundit", "timesjobs", "wellfound", "others"]:
+                        current_platform = "LinkedIn" if p_candidate.lower() == "linkedin" else p_candidate
 
             if "CLOUDFLARE DETECTED" in line:
                 status_text = "Cloudflare Verification..."

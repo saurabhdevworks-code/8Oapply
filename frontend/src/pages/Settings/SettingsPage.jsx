@@ -1012,6 +1012,60 @@ export default function SettingsPage() {
                   Limits the maximum number of new unapplied listings collected per platform in each automated or scheduled discovery run.
                 </p>
               </div>
+
+              {/* Feature 3: Action Mode (Collect Only vs Auto-Apply) */}
+              <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                    Execution Mode
+                  </label>
+                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
+                    config.automate_apply === false
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                  }`}>
+                    {config.automate_apply === false ? 'Collect / Discovery Only' : 'Auto-Apply Active'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateConfigValue('automate_apply', false)}
+                    className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                      config.automate_apply === false
+                        ? 'border-amber-500 bg-amber-50/50 dark:bg-amber-950/20 text-slate-900 dark:text-slate-100 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+                      Collect Only (Do Not Apply)
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                      Searches by platform priority order & limits. Saves all listings as "Not Applied" for your manual review.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateConfigValue('automate_apply', true)}
+                    className={`p-2.5 rounded-lg border text-left transition cursor-pointer ${
+                      config.automate_apply !== false
+                        ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 text-slate-900 dark:text-slate-100 shadow-2xs'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                      Auto-Apply
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                      Searches and automatically fills forms & submits applications using your profile and resume.
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Experience & Expected CTC secondary row */}

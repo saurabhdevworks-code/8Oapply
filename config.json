@@ -11,11 +11,10 @@
   "grad_year": "2025",
   "job_titles": [
     "Java Developer",
-    "Backend Developer"
+    "backend Developer"
   ],
   "locations": [
-    "Noida",
-    "Delhi"
+    "Noida"
   ],
   "skills": "Java, Spring Boot, JDBC, JavaScript, React, MongoDB, PostgreSQL, MySQL, SQL, Docker, Git, GitHub, REST APIs, HTML, CSS",
   "salary": "",
@@ -48,18 +47,16 @@
   "manual_login_wait": 45,
   "browser": "auto",
   "use_linkedin": true,
-  "use_naukri": false,
-  "use_indeed": false,
-  "use_glassdoor": true,
-  "use_internshala": true,
-  "use_shine": true,
-  "use_foundit": true,
-  "use_timesjobs": true,
-  "use_wellfound": true,
+  "use_naukri": true,
+  "use_indeed": true,
+  "use_glassdoor": false,
+  "use_internshala": false,
+  "use_shine": false,
+  "use_foundit": false,
+  "use_timesjobs": false,
+  "use_wellfound": false,
   "scheduler_enabled": false,
-  "scheduled_times": [
-    "17:25"
-  ],
+  "scheduled_times": [],
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 587,
   "smtp_user": "",
@@ -85,7 +82,7 @@
   "connected_timesjobs": false,
   "connected_wellfound": false,
   "auth_google_linkedin": false,
-  "auth_google_naukri": true,
+  "auth_google_naukri": false,
   "auth_google_glassdoor": false,
   "auth_google_internshala": false,
   "auth_google_shine": false,
@@ -116,7 +113,7 @@
   "bachelor_college": "CSJM University",
   "bachelor_degree": "BCA - Bachelor of Computer Applications",
   "bachelor_grad_year": "2023",
-  "job_post_age_days": 1,
+  "job_post_age_days": 3,
   "scheduler_days": [
     "mon",
     "tue",
@@ -150,11 +147,11 @@
   ],
   "scheduler_action_mode": "selected_jobs",
   "scheduled_selected_jobs": [],
-  "automate_apply": true,
+  "automate_apply": false,
   "platform_priority_order": [
-    "indeed",
     "others",
     "linkedin",
+    "indeed",
     "naukri",
     "glassdoor",
     "internshala",
@@ -163,28 +160,5 @@
     "timesjobs",
     "wellfound"
   ],
-  "schedules": [
-    {
-      "id": "sched_1",
-      "name": "Daily Pipeline",
-      "time": "17:25",
-      "frequency": "onetime",
-      "days": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri",
-        "sat",
-        "sun"
-      ],
-      "date": "2026-11-19",
-      "action_mode": "selected_jobs",
-      "enabled": false,
-      "selected_jobs": [
-        "others-1949adefb8f7",
-        "others-97240de6a3db"
-      ]
-    }
-  ]
+  "schedules": []
 }

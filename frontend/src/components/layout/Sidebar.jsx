@@ -83,10 +83,22 @@ export default function Sidebar() {
               <div className="flex items-center justify-between gap-2.5">
                 {/* Left Area: Status, Progress text and combos */}
                 <div className="flex-1 min-w-0">
-                  {/* Top: Runner Active */}
-                  <h4 className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight">
-                    Runner Active
-                  </h4>
+                  {/* Top: Runner Active + Current Platform Pill */}
+                  <div className="flex items-center justify-between pr-1">
+                    <h4 className="text-[13px] font-bold text-slate-900 dark:text-white tracking-tight">
+                      Runner Active
+                    </h4>
+                    {status.progress?.current_platform && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                        {status.progress.current_platform}
+                      </span>
+                    )}
+                  </div>
+                  {status.progress?.current_platform && (
+                    <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      Searching on <span className="font-semibold text-slate-700 dark:text-slate-200">{status.progress.current_platform}</span>...
+                    </p>
+                  )}
 
                   {/* Middle row: Progress (%) on left, combo/collection counter on right */}
                   <div className="flex items-center justify-between mt-1.5 pr-1">

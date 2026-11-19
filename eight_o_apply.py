@@ -1309,6 +1309,11 @@ def linkedin_bot():
                         pass
                     # Log job as Collected with status 'Not Applied'
                     save_applied("LinkedIn", job_title, company, job_id, driver.current_url, status="Not Applied", description=li_desc)
+                    if not CONFIG.get("automate_apply", True):
+                        log.info(f"LinkedIn: [Collect Only] Collected — {job_title} @ {company}")
+                        applied += 1
+                        human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                        continue
 
                     if job_id in applied_jobs:
                         log.info(f"LinkedIn: SKIP (already applied) — {job_title} @ {company}")
@@ -1729,6 +1734,11 @@ def naukri_bot():
                     pass
                 # 1. Log job as Collected with status 'Not Applied'
                 save_applied("Naukri", title, company, job_id, href, status="Not Applied", description=nk_desc)
+                if not CONFIG.get("automate_apply", True):
+                    log.info(f"Naukri: [Collect Only] Collected — {title} @ {company}")
+                    applied += 1
+                    human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                    continue
 
                 apply_btn = None
                 # 1. Try finding apply button by ID or universal XPath
@@ -2003,7 +2013,7 @@ def indeed_bot():
         log.info(f"✅ Indeed: Successfully collected {len(collected_valid)} matching active jobs!")
 
         # If auto_apply_indeed is enabled in user config, attempt automated submissions
-        if CONFIG.get("auto_apply_indeed") and collected_valid:
+        if CONFIG.get("auto_apply_indeed") and collected_valid and CONFIG.get("automate_apply", True):
             log.info("Indeed: Automated submission mode active for collected listings...")
             driver = get_shared_driver("Indeed")
             for cj in collected_valid:
@@ -2120,6 +2130,11 @@ def glassdoor_bot():
                 except Exception:
                     pass
                 save_applied("Glassdoor", title, company, job_id, driver.current_url, status="Not Applied", description=gd_desc)
+                if not CONFIG.get("automate_apply", True):
+                    log.info(f"Glassdoor: [Collect Only] Collected — {title} @ {company}")
+                    applied += 1
+                    human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                    continue
                 if job_id in applied_jobs:
                     human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
                     continue
@@ -2222,6 +2237,11 @@ def internshala_bot():
                 break
             job_id = href.rstrip("/").split("/")[-1]
             save_applied("Internshala", title, "Unknown", job_id, href, status="Not Applied")
+            if not CONFIG.get("automate_apply", True):
+                log.info(f"Internshala: [Collect Only] Collected — {title}")
+                applied += 1
+                human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                continue
             if job_id in applied_jobs:
                 human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
                 continue
@@ -2371,6 +2391,11 @@ def shine_bot():
                 except Exception:
                     pass
                 save_applied("Shine", title, company, job_id, href, status="Not Applied", description=shine_desc)
+                if not CONFIG.get("automate_apply", True):
+                    log.info(f"Shine: [Collect Only] Collected — {title} @ {company}")
+                    applied += 1
+                    human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                    continue
 
                 for sel in [".apply-btn", "a.apply", "button.apply-btn", "#applyBtn"]:
                     try:
@@ -2473,6 +2498,13 @@ def foundit_bot():
                     company = driver.find_element(By.CSS_SELECTOR, ".companyName, h2.company, .company-name").text.strip()
                 except Exception:
                     pass
+
+                if not CONFIG.get("automate_apply", True):
+                    save_applied("Foundit", title, company, job_id, href, status="Not Applied")
+                    log.info(f"Foundit: [Collect Only] Collected — {title} @ {company}")
+                    applied += 1
+                    human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                    continue
 
                 for sel in [".applyButton", "button.apply", "#applyBtn", "a.apply-button"]:
                     try:
@@ -2579,6 +2611,13 @@ def timesjobs_bot():
                 except Exception:
                     pass
 
+                if not CONFIG.get("automate_apply", True):
+                    save_applied("TimesJobs", title, company, job_id, href, status="Not Applied")
+                    log.info(f"TimesJobs: [Collect Only] Collected — {title} @ {company}")
+                    applied += 1
+                    human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                    continue
+
                 for sel in ["#applyLink", ".apply-btn", "a[title*='Apply']", "button.btn-apply"]:
                     try:
                         btn = driver.find_element(By.CSS_SELECTOR, sel)
@@ -2669,6 +2708,11 @@ def wellfound_bot():
                 break
             job_id = href.rstrip("/").split("/")[-1]
             save_applied("Wellfound", title, "Unknown", job_id, href, status="Not Applied")
+            if not CONFIG.get("automate_apply", True):
+                log.info(f"Wellfound: [Collect Only] Collected — {title}")
+                applied += 1
+                human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                continue
             if job_id in applied_jobs:
                 human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
                 continue
@@ -2977,7 +3021,7 @@ def others_bot():
         log.info(f"Others: Collected {collected} new jobs into application records")
 
         # Optional Auto-apply phase (disabled by default so data collection is lightning fast)
-        if CONFIG.get("auto_apply_others", False) and new_jobs:
+        if CONFIG.get("auto_apply_others", False) and new_jobs and CONFIG.get("automate_apply", True):
             auto_apply_count = min(len(new_jobs), 1)
             for clean_url, job_title, company, job_id, plat in new_jobs[:auto_apply_count]:
                 if applied >= CONFIG.get("max_per_platform", 20):
