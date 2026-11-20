@@ -4,6 +4,7 @@ import { fetchAppliedJobs, fetchCollectorJobs, runJobCollector } from '../../ser
 import ScallopBadge from '../../components/common/ScallopBadge';
 import PlatformLogo from '../../components/common/PlatformLogo';
 import ScheduleWatchModal from '../../components/common/ScheduleWatchModal';
+import CustomSelect from '../../components/common/CustomSelect';
 import {
   Briefcase,
   Send,
@@ -243,19 +244,17 @@ export default function DashboardPage() {
 
         {/* Right Side Filters: Time Period & Portal Filter */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[6px] px-2.5 py-1.5 shadow-2xs">
-            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <select
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer rounded-[6px]"
-            >
-              <option value="all" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">All Time</option>
-              <option value="today" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Today</option>
-              <option value="7days" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Last 7 Days</option>
-              <option value="30days" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Last 30 Days</option>
-            </select>
-          </div>
+          <CustomSelect
+            value={timeFilter}
+            onChange={(val) => setTimeFilter(val)}
+            icon={Calendar}
+            options={[
+              { value: 'all', label: 'All Time' },
+              { value: 'today', label: 'Today' },
+              { value: '7days', label: 'Last 7 Days' },
+              { value: '30days', label: 'Last 30 Days' },
+            ]}
+          />
 
           {/* Custom Styled Portal Dropdown Filter */}
           <div className="relative" ref={platformDropdownRef}>

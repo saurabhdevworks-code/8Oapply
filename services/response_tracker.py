@@ -226,6 +226,11 @@ def sync_applied_jobs_with_inbox_and_lifecycle() -> Dict[str, Any]:
             jid = (r.get("job_id") or "").strip()
             comp_lower = comp.lower()
 
+            # Rule: If a job is "Not Applied", NEVER advance or match it to any applied status!
+            if old_status == "Not Applied":
+                rows.append(r)
+                continue
+
             # 1. Match from inbox responses (Direct job_id match or company match)
             matched_resp = resp_by_job_id.get(jid)
             if not matched_resp and comp_lower:

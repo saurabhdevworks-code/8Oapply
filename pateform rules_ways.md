@@ -96,18 +96,21 @@ $$\text{Jobs Processed Per Platform} \le \text{CONFIG}["\text{max\_per\_platform
 * Once a platform reaches this threshold, the runner safely logs completion (`<Platform> DONE`) and transitions to the next priority platform.
 * Prevents over-querying a single source and balances application volume across portals.
 
-### Rule 3: Execution Modes (Collect Only vs Auto-Apply)
-Controlled via `automate_apply` in `config.json` and configurable in Settings:
-* **Mode A: Collect Only (Discovery Mode)** (`automate_apply: false`)
-  * Searches each platform according to priority order.
-  * Captures job title, company, location, URL, and full job description.
-  * Records status as `Not Applied` in `applied_jobs.csv`.
-  * **Strictly skips all apply and submit buttons**.
-* **Mode B: Auto-Apply Mode** (`automate_apply: true`)
-  * Searches and collects matching jobs.
-  * Validates candidate profile and resume file.
-  * Auto-fills candidate personal details, academic scores, skills, and links.
-  * Submits application and logs status as `Applied`.
+### Rule 3: 2-Way Execution Behavior (Manual Run vs Scheduler Triggered)
+JobBot enforces a strict 2-way operational model:
+1. **Manual User Run (`POST /api/bot/start` via UI Run Bot / Play Button):**
+   * **Collect Jobs Only**: Discovers matching jobs across all enabled platforms (Others, LinkedIn, Indeed, Naukri, Glassdoor, Internshala, Shine, Foundit, TimesJobs, Wellfound).
+   * Extracts clean metadata, job title, company, location, URL, and full job description.
+   * Records all newly discovered jobs into `applied_jobs.csv` with status `Not Applied`.
+   * **Strictly skips all apply and submit buttons**.
+   * Does not require resume or academic profile to be pre-filled to start discovering jobs.
+2. **Scheduler Triggered Run (`scheduler_worker` or `POST /api/scheduler/run-now`):**
+   * Operates strictly on the basis of configured scheduler routine rules (`scheduler_action_mode` / routine settings):
+     * **Mode 1: Fetch & Auto-Apply** (`fetch_and_apply` / `both`): Performs ATS discovery, auto-applies to queued jobs, triggers the live crawler with auto-apply enabled (`automate_apply: true`), and validates candidate resume & profile.
+     * **Mode 2: Apply Selected Jobs** (`selected_jobs`): Processes specific jobs selected and queued by candidate.
+     * **Mode 3: Discovery Only** (`collect_only` / `discovery_only`): Runs discovery and collection per routine schedule.
+     * **Mode 4: Apply Only** (`apply_only`): Submits applications to unapplied listings already in queue.
+   * Performs inbox recruiter response checking and sends daily digest email based on scheduler settings.
 
 ### Rule 4: Zero Duplicate Applications (Deduplication)
 $$\forall \ \text{Job}_k, \quad \text{If } \text{Job}_k.\text{id} \in \text{applied\_jobs.csv} \implies \mathbf{SKIP}$$

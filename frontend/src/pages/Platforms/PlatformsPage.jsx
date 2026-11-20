@@ -273,24 +273,22 @@ export default function PlatformsPage() {
 
   const handleConnect = async (plat) => {
     setConnectingId(plat.id);
-    // 1. Directly open login portal in a new tab of this browser
-    if (plat.loginUrl) {
-      window.open(plat.loginUrl, '_blank');
-    }
-    // 2. Mark connected and enabled immediately in config & backend
     try {
+      // 1. Launch the automation Chrome window directly so session is saved in the bot profile
+      await openPlatformLoginBrowser(plat.id);
+
+      // 2. Mark connected and enabled in config & backend
       const newConfig = {
         ...config,
         [plat.flag]: true,
         [`connected_${plat.id}`]: true,
       };
       await handleSaveConfig(newConfig);
-      await verifyPlatformSession(plat.id);
       await loadPlatformStatuses();
       if (reloadPlatformStatus) await reloadPlatformStatus();
       if (reloadConfig) await reloadConfig();
       if (showToast) {
-        showToast(`${plat.name} connected successfully! Login tab opened.`, 'success');
+        showToast(`Chrome opened for ${plat.name}. Sign in in that window to connect session!`, 'success');
       }
     } catch (err) {
       if (showToast) showToast('Error connecting: ' + err.message, 'error');

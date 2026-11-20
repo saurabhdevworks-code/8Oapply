@@ -7,6 +7,7 @@ import {
   generateAIMessage,
 } from '../../services/api';
 import { useBot } from '../../context/BotContext';
+import CustomSelect from '../../components/common/CustomSelect';
 import {
   MailCheck,
   RefreshCw,
@@ -241,20 +242,18 @@ export default function ResponsesPage() {
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-3.5 h-3.5 text-neutral-400" />
-          <select
+          <CustomSelect
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-1.5 rounded bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none text-xs text-neutral-200 cursor-pointer"
-          >
-            <option value="ALL">All Statuses ({responses.length})</option>
-            <option value="POSITIVE">Positive Responses Only ({metrics.positive})</option>
-            {STATUS_OPTIONS.map((st) => (
-              <option key={st} value={st}>
-                {st}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setStatusFilter(val)}
+            icon={Filter}
+            className="!bg-neutral-900 !border-neutral-800 !text-neutral-200 hover:!border-neutral-700"
+            menuClassName="!bg-neutral-900 !border-neutral-800"
+            options={[
+              { value: 'ALL', label: `All Statuses (${responses.length})` },
+              { value: 'POSITIVE', label: `Positive Responses (${metrics.positive})` },
+              ...STATUS_OPTIONS.map((st) => ({ value: st, label: st })),
+            ]}
+          />
         </div>
       </div>
 

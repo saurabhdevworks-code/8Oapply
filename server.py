@@ -77,6 +77,7 @@ CSV_LOCK_FILE = BASE_DIR / "applied_jobs.csv.lock"
 # Process state
 bot_process: Optional[subprocess.Popen] = None
 bot_started_at: Optional[float] = None
+bot_run_mode: str = "collect_only"
 
 
 class RegisterRequest(BaseModel):
@@ -343,18 +344,12 @@ def get_status():
         "uptime_seconds": uptime,
         "started_at": datetime.fromtimestamp(bot_started_at).isoformat() if running and bot_started_at else None,
         "progress": progress,
+        "mode": bot_run_mode if running else None,
     }
 
 
-def validate_candidate_profile(paths: dict):
+def validate_candidate_profile(paths: dict, is_apply_mode: bool = True):
     """Enforces that candidate profile and resume are completed before any job applying."""
-    resume_target = paths.get("resume_file")
-    if not resume_target or not resume_target.exists():
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot apply: Please upload resume.pdf in 'Candidate Profile & Documents' first."
-        )
-
     config_target = paths.get("config_file")
     cfg = {}
     if config_target and config_target.exists():
@@ -364,30 +359,38 @@ def validate_candidate_profile(paths: dict):
         except Exception:
             pass
 
-    missing = []
-    if not cfg.get("name", "").strip():
-        missing.append("Full Name")
-    if not cfg.get("email", "").strip():
-        missing.append("Email Address")
-    if not cfg.get("phone", "").strip():
-        missing.append("Phone Number")
+    if is_apply_mode:
+        resume_target = paths.get("resume_file")
+        if not resume_target or not resume_target.exists():
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot apply: Please upload resume.pdf in 'Candidate Profile & Documents' first."
+            )
 
-    has_education = bool(
-        cfg.get("college", "").strip() or 
-        cfg.get("bachelor_college", "").strip() or 
-        cfg.get("master_college", "").strip() or
-        cfg.get("degree", "").strip() or
-        cfg.get("bachelor_degree", "").strip() or
-        cfg.get("master_degree", "").strip()
-    )
-    if not has_education:
-        missing.append("Education Details")
+        missing = []
+        if not cfg.get("name", "").strip():
+            missing.append("Full Name")
+        if not cfg.get("email", "").strip():
+            missing.append("Email Address")
+        if not cfg.get("phone", "").strip():
+            missing.append("Phone Number")
 
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"First fill this Candidate Profile & Documents page info: missing {', '.join(missing)}."
+        has_education = bool(
+            cfg.get("college", "").strip() or 
+            cfg.get("bachelor_college", "").strip() or 
+            cfg.get("master_college", "").strip() or
+            cfg.get("degree", "").strip() or
+            cfg.get("bachelor_degree", "").strip() or
+            cfg.get("master_degree", "").strip()
         )
+        if not has_education:
+            missing.append("Education Details")
+
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"First fill this Candidate Profile & Documents page info: missing {', '.join(missing)}."
+            )
 
     # 2. Search Targets Validation (Real Targets Only - No Dummy Fallbacks)
     job_titles = cfg.get("job_titles") or []
@@ -421,23 +424,37 @@ def validate_candidate_profile(paths: dict):
     if not connected_platforms:
         raise HTTPException(
             status_code=400,
-            detail="First connect at least one platform"
+            detail="Please connect at least one job platform in Platforms Settings before starting collection."
         )
 
     if not ready_platforms:
         raise HTTPException(
             status_code=400,
-            detail="At least one platform must be enabled"
+            detail="At least one connected platform must be enabled. Please enable platforms in Platforms Settings."
+        )
+
+    # 4. Collection Limit Check (Skip if limit is 0 across all ready platforms)
+    platform_limits = cfg.get("platform_limits") or {}
+    global_limit = int(cfg.get("max_per_platform") or cfg.get("max_jobs_to_collect") or 50)
+    has_positive_limit = any(
+        int(platform_limits.get(p, global_limit)) > 0
+        for p in ready_platforms
+    )
+    if not has_positive_limit:
+        raise HTTPException(
+            status_code=400,
+            detail="All enabled platforms have collection limits set to 0. Set a positive collection limit in Settings."
         )
 
 
-def launch_bot_process(paths: Optional[Dict[str, Path]] = None):
-    global bot_process, bot_started_at
+def launch_bot_process(paths: Optional[Dict[str, Path]] = None, run_mode: str = "collect_only"):
+    global bot_process, bot_started_at, bot_run_mode
     if is_bot_running():
-        return {"status": "already_running", "pid": bot_process.pid}
+        return {"status": "already_running", "pid": bot_process.pid, "mode": bot_run_mode}
 
     target_paths = paths or resolve_paths()
-    validate_candidate_profile(target_paths)
+    is_apply = (run_mode == "auto_apply")
+    validate_candidate_profile(target_paths, is_apply_mode=is_apply)
     try:
         cmd = [sys.executable, "-u", str(BOT_SCRIPT)]
         env = os.environ.copy()
@@ -446,6 +463,8 @@ def launch_bot_process(paths: Optional[Dict[str, Path]] = None):
         env["JOBBOT_CSV_PATH"] = str(target_paths["csv_file"])
         env["JOBBOT_RESUME_PATH"] = str(target_paths["resume_file"])
         env["JOBBOT_COOKIE_DIR"] = str(target_paths.get("cookies_dir", BASE_DIR / "cookies"))
+        env["JOBBOT_RUN_MODE"] = run_mode
+        env["JOBBOT_AUTOMATE_APPLY"] = "1" if is_apply else "0"
 
         log_fp = open(BASE_DIR / "jobbot.log", "a", encoding="utf-8")
         bot_process = subprocess.Popen(
@@ -457,7 +476,8 @@ def launch_bot_process(paths: Optional[Dict[str, Path]] = None):
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         bot_started_at = time.time()
-        return {"status": "started", "pid": bot_process.pid}
+        bot_run_mode = run_mode
+        return {"status": "started", "pid": bot_process.pid, "mode": run_mode}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -465,11 +485,12 @@ def launch_bot_process(paths: Optional[Dict[str, Path]] = None):
 @app.post("/api/bot/start")
 def start_bot(request: Request):
     paths = resolve_paths(request)
-    return launch_bot_process(paths)
+    # Manual run via button: ALWAYS collect jobs only
+    return launch_bot_process(paths, run_mode="collect_only")
 
 
 def kill_all_bot_instances():
-    global bot_process, bot_started_at
+    global bot_process, bot_started_at, bot_run_mode
     if bot_process is not None:
         try:
             if os.name == "nt":
@@ -480,6 +501,7 @@ def kill_all_bot_instances():
             pass
         bot_process = None
         bot_started_at = None
+        bot_run_mode = "collect_only"
 
     # Terminate any orphaned chromedriver/msedgedriver and detached jobbot.py processes
     if os.name == "nt":
@@ -1758,8 +1780,12 @@ def get_scheduler_info():
 def run_scheduler_pipeline_now(request: Request):
     paths = resolve_paths(request)
     config = get_current_config()
-    if config.get("automate_apply", True):
-        validate_candidate_profile(paths)
+    action_mode = (config.get("scheduler_action_mode") or "fetch_and_apply").strip().lower()
+    is_apply = action_mode not in ["collect_only", "discovery_only"]
+    if is_apply and config.get("automate_apply", True):
+        validate_candidate_profile(paths, is_apply_mode=True)
+    else:
+        validate_candidate_profile(paths, is_apply_mode=False)
 
     # Execute in background thread to prevent blocking HTTP server
     pipeline_thread = threading.Thread(
@@ -1769,7 +1795,7 @@ def run_scheduler_pipeline_now(request: Request):
         name="ManualPipelineRun"
     )
     pipeline_thread.start()
-    return {"status": "pipeline_started", "message": "Autonomous pipeline execution initiated in background"}
+    return {"status": "pipeline_started", "message": f"Autonomous pipeline execution ({action_mode}) initiated in background"}
 
 
 class ApplySelectedJobsPayload(BaseModel):

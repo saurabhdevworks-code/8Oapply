@@ -169,11 +169,29 @@ def is_job_match(
         if neg in t_lower:
             return False, f"Negative role match: '{neg}'"
 
+    # User Configured Exclude Keywords
+    user_excludes = [k.lower().strip() for k in cfg.get("exclude_keywords", []) if k.strip()]
+    full_text = f"{t_lower} {description.lower() if description else ''}"
+    for ex in user_excludes:
+        if ex in full_text:
+            return False, f"Exclude keyword matched: '{ex}'"
+
     # ── 2. Reject Incompatible Technology Stacks ───────────────────
     # If candidate doesn't have .NET, SAP, or Salesforce in skills, reject explicitly
     for incomp in INCOMPATIBLE_STACK_KEYWORDS:
         if incomp in t_lower:
             return False, f"Incompatible technology stack: '{incomp}'"
+
+    # User Configured Include Keywords
+    user_includes = [k.lower().strip() for k in cfg.get("include_keywords", []) if k.strip()]
+    if user_includes:
+        match_logic = (cfg.get("keyword_match_logic") or "OR").upper()
+        if match_logic == "AND":
+            if not all(inc in full_text for inc in user_includes):
+                return False, f"Missing required include keywords (AND logic)"
+        else:
+            if not any(inc in full_text for inc in user_includes):
+                return False, f"None of include keywords matched"
 
     # ── 3. Validate Job Title Match Against Target Titles ──────────
     matched_target = False

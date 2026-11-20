@@ -243,10 +243,13 @@ def execute_scheduled_pipeline(config: Dict[str, Any], trigger_bot_runner_fn=Non
         except Exception:
             pass
 
-        # 2. Trigger live crawler runner if apply is enabled
+        # 2. Trigger live crawler runner if apply is enabled (Auto-Apply Mode)
         if trigger_bot_runner_fn:
             try:
-                trigger_bot_runner_fn()
+                try:
+                    trigger_bot_runner_fn(run_mode="auto_apply")
+                except TypeError:
+                    trigger_bot_runner_fn()
                 if is_bot_running_fn:
                     time.sleep(5)
                     wait_start = time.time()
@@ -263,7 +266,10 @@ def execute_scheduled_pipeline(config: Dict[str, Any], trigger_bot_runner_fn=Non
         last_run_status = step_description
         if trigger_bot_runner_fn:
             try:
-                trigger_bot_runner_fn()
+                try:
+                    trigger_bot_runner_fn(run_mode="collect_only")
+                except TypeError:
+                    trigger_bot_runner_fn()
                 if is_bot_running_fn:
                     time.sleep(5)
                     wait_start = time.time()

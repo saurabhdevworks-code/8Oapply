@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { fetchAppliedJobs } from '../../services/api';
 import PlatformLogo from './PlatformLogo';
+import CustomSelect from './CustomSelect';
 
 export default function ScheduledJobSelectModal({
   isOpen,
@@ -326,25 +327,19 @@ export default function ScheduledJobSelectModal({
               )}
             </div>
 
-            {/* Date Filter Dropdown */}
-            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-2xs">
-              <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
-              <select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="text-xs font-semibold bg-transparent text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Dates</option>
-                <option value="today">Today</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="last7days">Last 7 Days</option>
-                {availableDates.map((d) => (
-                  <option key={d} value={d}>
-                    Date: {d}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Custom Date Filter Dropdown */}
+            <CustomSelect
+              value={dateFilter}
+              onChange={(val) => setDateFilter(val)}
+              icon={Calendar}
+              options={[
+                { value: 'all', label: 'All Dates' },
+                { value: 'today', label: 'Today' },
+                { value: 'yesterday', label: 'Yesterday' },
+                { value: 'last7days', label: 'Last 7 Days' },
+                ...availableDates.map((d) => ({ value: d, label: `Date: ${d}` })),
+              ]}
+            />
           </div>
 
           {/* Quick Counter Badges */}

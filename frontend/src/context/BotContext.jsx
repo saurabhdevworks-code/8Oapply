@@ -147,15 +147,17 @@ export function BotProvider({ children }) {
     return null;
   }, []);
 
-  const checkRunnerReadiness = useCallback((cfg = config, plats = platformsStatus) => {
-    const profileCheck = checkProfileCompleteness(cfg);
-    if (!profileCheck.complete) {
-      return {
-        ready: false,
-        reason: profileCheck.reason,
-        connectedCount: 0,
-        readyCount: 0,
-      };
+  const checkRunnerReadiness = useCallback((cfg = config, plats = platformsStatus, forApply = false) => {
+    if (forApply) {
+      const profileCheck = checkProfileCompleteness(cfg);
+      if (!profileCheck.complete) {
+        return {
+          ready: false,
+          reason: profileCheck.reason,
+          connectedCount: 0,
+          readyCount: 0,
+        };
+      }
     }
 
     if (!plats) {
@@ -209,7 +211,7 @@ export function BotProvider({ children }) {
     }
     try {
       await startBot();
-      showToast('Runner started successfully! Watch live logs.', 'success');
+      showToast('Runner started in Collect Only mode! Discovered jobs will be collected into your database.', 'success');
       const stat = await fetchStatus();
       setStatus(stat);
       reloadPlatformStatus();

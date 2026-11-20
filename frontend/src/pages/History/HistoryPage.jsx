@@ -15,6 +15,7 @@ import { useBot } from '../../context/BotContext';
 import PlatformLogo from '../../components/common/PlatformLogo';
 import ConnectGmailModal from '../../components/common/ConnectGmailModal';
 import ScheduleConfigModal from '../../components/common/ScheduleConfigModal';
+import CustomSelect from '../../components/common/CustomSelect';
 import {
   FileSpreadsheet,
   Search,
@@ -194,7 +195,17 @@ export default function HistoryPage() {
         await loadJobs();
         return;
       }
-      // Immediately reflect Applied in UI
+
+      // Rule: Without successful apply, NEVER update status to Applied
+      if (!res || !res.success) {
+        if (showToast) {
+          showToast(res?.message || 'Application could not be completed. Status NOT updated.', 'error');
+        }
+        await loadJobs();
+        return;
+      }
+
+      // Only on confirmed successful application:
       setJobs((prev) =>
         prev.map((j) => (j.job_id === job.job_id ? { ...j, status: 'Applied' } : j))
       );
@@ -617,25 +628,25 @@ export default function HistoryPage() {
 
         {/* Right Area: Date Range, Status & Platform Filters */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          {/* Date Range Filter */}
-          <div className="relative">
-            <Calendar className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
-              value={dateFilter}
-              onChange={(e) => {
-                setDateFilter(e.target.value);
-                setPage(1);
-              }}
-              className="pl-8 pr-7 h-[34px] rounded-[6px] bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none text-xs text-neutral-200 cursor-pointer"
-            >
-              <option value="ALL">All Dates</option>
-              <option value="TODAY">Today</option>
-              <option value="YESTERDAY">Yesterday</option>
-              <option value="LAST_7_DAYS">Last 7 Days</option>
-              <option value="LAST_30_DAYS">Last 30 Days</option>
-              <option value="CUSTOM">Custom Range...</option>
-            </select>
-          </div>
+          {/* Custom Date Range Filter */}
+          <CustomSelect
+            value={dateFilter}
+            onChange={(val) => {
+              setDateFilter(val);
+              setPage(1);
+            }}
+            icon={Calendar}
+            className="!h-[34px] !bg-neutral-900 !border-neutral-800 !text-neutral-200 hover:!border-neutral-700"
+            menuClassName="!bg-neutral-900 !border-neutral-800"
+            options={[
+              { value: 'ALL', label: 'All Dates' },
+              { value: 'TODAY', label: 'Today' },
+              { value: 'YESTERDAY', label: 'Yesterday' },
+              { value: 'LAST_7_DAYS', label: 'Last 7 Days' },
+              { value: 'LAST_30_DAYS', label: 'Last 30 Days' },
+              { value: 'CUSTOM', label: 'Custom Range...' },
+            ]}
+          />
 
           {/* Custom Date Pickers when CUSTOM is selected */}
           {dateFilter === 'CUSTOM' && (
@@ -662,27 +673,27 @@ export default function HistoryPage() {
             </div>
           )}
 
-          {/* Status Filter */}
-          <div className="relative">
-            <CheckCircle2 className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="pl-8 pr-7 h-[34px] rounded-[6px] bg-neutral-900 border border-neutral-800 focus:border-neutral-600 focus:outline-none text-xs text-neutral-200 cursor-pointer"
-            >
-              <option value="ALL">All Statuses ({jobs.length})</option>
-              <option value="Not Applied">Not Applied ({statusCounts['Not Applied'] || 0})</option>
-              <option value="Applied">Applied ({statusCounts['Applied'] || 0})</option>
-              <option value="Under Review">Under Review ({statusCounts['Under Review'] || 0})</option>
-              <option value="Assessment (OA)">Assessment (OA) ({statusCounts['Assessment (OA)'] || 0})</option>
-              <option value="Interview Scheduled">Interview Scheduled ({statusCounts['Interview Scheduled'] || 0})</option>
-              <option value="Offer">Offer ({statusCounts['Offer'] || 0})</option>
-              <option value="Rejected">Rejected ({statusCounts['Rejected'] || 0})</option>
-            </select>
-          </div>
+          {/* Custom Status Filter */}
+          <CustomSelect
+            value={statusFilter}
+            onChange={(val) => {
+              setStatusFilter(val);
+              setPage(1);
+            }}
+            icon={CheckCircle2}
+            className="!h-[34px] !bg-neutral-900 !border-neutral-800 !text-neutral-200 hover:!border-neutral-700"
+            menuClassName="!bg-neutral-900 !border-neutral-800"
+            options={[
+              { value: 'ALL', label: `All Statuses (${jobs.length})` },
+              { value: 'Not Applied', label: 'Not Applied', count: statusCounts['Not Applied'] || 0 },
+              { value: 'Applied', label: 'Applied', count: statusCounts['Applied'] || 0 },
+              { value: 'Under Review', label: 'Under Review', count: statusCounts['Under Review'] || 0 },
+              { value: 'Assessment (OA)', label: 'Assessment (OA)', count: statusCounts['Assessment (OA)'] || 0 },
+              { value: 'Interview Scheduled', label: 'Interview Scheduled', count: statusCounts['Interview Scheduled'] || 0 },
+              { value: 'Offer', label: 'Offer', count: statusCounts['Offer'] || 0 },
+              { value: 'Rejected', label: 'Rejected', count: statusCounts['Rejected'] || 0 },
+            ]}
+          />
 
           {/* Platform Filter with Platform Logos and Counts */}
           <div className="relative" ref={platformMenuRef}>

@@ -163,6 +163,20 @@ if _config_file.exists():
     except Exception as _e:
         print(f"Warning: Failed to load config.json: {_e}")
 
+# Environment variable overrides (e.g. from launch_bot_process or manual/scheduler triggers)
+_env_run_mode = (os.environ.get("JOBBOT_RUN_MODE") or "").strip().lower()
+_env_automate_apply = (os.environ.get("JOBBOT_AUTOMATE_APPLY") or "").strip().lower()
+
+if _env_run_mode == "collect_only":
+    CONFIG["automate_apply"] = False
+elif _env_run_mode in ("auto_apply", "apply", "fetch_and_apply"):
+    CONFIG["automate_apply"] = True
+
+if _env_automate_apply in ("0", "false", "no", "off"):
+    CONFIG["automate_apply"] = False
+elif _env_automate_apply in ("1", "true", "yes", "on"):
+    CONFIG["automate_apply"] = True
+
 # ══════════════════════════════════════════════════════════════
 
 logging.basicConfig(
@@ -865,7 +879,8 @@ def make_driver(platform_name=""):
     """
     # 1. Primary: Real Chrome Remote Debugging (Port 9222)
     if not is_port_listening(9222):
-        launch_real_chrome("https://www.google.com")
+        init_url = "https://www.naukri.com/nlogin/login" if (platform_name or "").lower() == "naukri" else "https://www.google.com"
+        launch_real_chrome(init_url)
 
     if is_port_listening(9222):
         try:
@@ -1312,7 +1327,7 @@ def linkedin_bot():
                     if not CONFIG.get("automate_apply", True):
                         log.info(f"LinkedIn: [Collect Only] Collected — {job_title} @ {company}")
                         applied += 1
-                        human_delay(CONFIG["delay_min"], CONFIG["delay_max"])
+                        human_delay(1, 2.5)
                         continue
 
                     if job_id in applied_jobs:
@@ -1657,10 +1672,14 @@ def naukri_bot():
     applied = 0
 
     try:
-        logged_in = check_naukri_logged_in(driver, timeout_seconds=CONFIG.get("manual_login_wait", 60))
-        if not logged_in:
-            log.error("Naukri: Not logged in — skipping Naukri for this cycle")
-            return 0
+        is_collect_only = not CONFIG.get("automate_apply", True)
+        if not is_collect_only:
+            logged_in = check_naukri_logged_in(driver, timeout_seconds=CONFIG.get("manual_login_wait", 60))
+            if not logged_in:
+                log.error("Naukri: Not logged in — skipping Naukri for this auto-apply cycle")
+                return 0
+        else:
+            log.info("Naukri: [Collect Only] Public search mode — searching and collecting jobs (no login required)...")
 
         query = CONFIG["job_title"].replace(" ", "-")
         loc   = CONFIG["location"].lower().replace(" ", "-")
@@ -1677,14 +1696,20 @@ def naukri_bot():
         try:
             cards = driver.find_elements(
                 By.CSS_SELECTOR,
-                "article.jobTuple, .job-container, .srp-jobtuple-wrapper, [data-job-id]"
+                "article.jobTuple, .job-container, .srp-jobtuple-wrapper, [data-job-id], .cust-job-tuple, div[class*='srp-jobtuple']"
             )
             for c in cards[:CONFIG["max_per_platform"] + 10]:
                 try:
-                    a = c.find_element(By.CSS_SELECTOR, "a.title, a.jobTitle, .row1 a, a[title]")
+                    a = c.find_element(By.CSS_SELECTOR, "a.title, a.jobTitle, .row1 a, a[title], [class*='title'] a, a[href*='job-listings']")
                     href = a.get_attribute("href")
+                    comp_name = "Unknown"
+                    try:
+                        comp_el = c.find_element(By.CSS_SELECTOR, ".comp-name-nowrap, a.comp-name, .company-name, [class*='companyName'], [class*='comp-name']")
+                        comp_name = comp_el.text.strip()
+                    except Exception:
+                        pass
                     if href:
-                        job_links.append((href, a.text.strip()))
+                        job_links.append((href, a.text.strip(), comp_name))
                 except Exception:
                     pass
         except Exception:
@@ -1692,7 +1717,7 @@ def naukri_bot():
 
         log.info(f"Naukri: Found {len(job_links)} jobs")
 
-        for href, title in job_links:
+        for href, title, card_comp in job_links:
             if applied >= CONFIG["max_per_platform"]:
                 break
             if not href:
@@ -1711,6 +1736,14 @@ def naukri_bot():
             job_id = href.split("?")[0].rstrip("/").split("/")[-1]
             if job_id in applied_jobs:
                 log.info(f"Naukri: SKIP — {title}")
+                continue
+
+            if not CONFIG.get("automate_apply", True):
+                # Fast direct collection from search result card
+                save_applied("Naukri", title, card_comp if card_comp != "Unknown" else "Naukri Listing", job_id, href, status="Not Applied", description="")
+                log.info(f"Naukri: [Collect Only] Collected — {title} @ {card_comp}")
+                applied += 1
+                human_delay(1, 2.5)
                 continue
             try:
                 driver.get(href)
@@ -3072,6 +3105,11 @@ def main():
     log.info(f"Browser mode: {CONFIG['browser'].upper()}")
     log.info(f"Max per platform: {CONFIG['max_per_platform']}")
     log.info(f"Platform rest: {CONFIG['platform_rest_min']//60}-{CONFIG['platform_rest_max']//60} minutes")
+    is_auto_apply = bool(CONFIG.get("automate_apply", True))
+    mode_label = "AUTO-APPLY (Apply to discovered listings)" if is_auto_apply else "COLLECT ONLY (Discovery & Save — No applications submitted)"
+    log.info(f"Execution Mode: {mode_label}")
+    if not is_auto_apply:
+        log.info("ℹ️  Running in Collect Only mode: All discovered listings will be logged with status 'Not Applied' without submitting applications.")
 
     if not os.path.exists(CONFIG["resume_path"]):
         log.warning(f"⚠️  Resume nahi mila: {CONFIG['resume_path']}")
@@ -3116,8 +3154,19 @@ def main():
                 active_platforms.sort(key=get_plat_rank)
 
             for i, (platform_name, bot_fn) in enumerate(active_platforms):
-                log.info(f"\n▶  Starting {platform_name}...")
+                plat_key = platform_name.lower()
+                plat_limits = CONFIG.get("platform_limits") or {}
+                # Dependency 4: Per-Platform Limit & 0-limit skip rule
+                p_limit = int(plat_limits.get(plat_key, CONFIG.get("max_per_platform", 50)))
+                if p_limit <= 0:
+                    log.info(f"Skipping {platform_name}: configured collection limit is 0")
+                    continue
+
+                orig_limit = CONFIG.get("max_per_platform")
+                CONFIG["max_per_platform"] = p_limit
+                log.info(f"\n▶  Starting {platform_name} (Target Limit: {p_limit} jobs)...")
                 count = bot_fn()
+                CONFIG["max_per_platform"] = orig_limit
                 results[platform_name] = results.get(platform_name, 0) + count
 
                 # Rest between different platforms or quick pause between combos
@@ -3195,13 +3244,14 @@ def apply_to_job_live(url: str, platform: str = "", title: str = "", company: st
                 pass
 
         if platform_clean == "Naukri":
-            # Verify active session before applying
-            logged_in = check_naukri_logged_in(driver, timeout_seconds=15)
+            # Verify active session before applying (give at least 60s for manual OTP / sign-in)
+            login_wait = max(60, int(CONFIG.get("manual_login_wait", 60)))
+            logged_in = check_naukri_logged_in(driver, timeout_seconds=login_wait)
             if not logged_in:
                 return {
                     "success": False,
                     "status": "not_logged_in",
-                    "message": "Naukri is not logged in. Please sign in in Chrome, then try again!"
+                    "message": "Naukri session not verified. Please sign in in the open Chrome window (or configure credentials in Settings), then click Apply again!"
                 }
 
         driver.get(url)
